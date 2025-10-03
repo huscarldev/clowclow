@@ -45,6 +45,42 @@ class ClaudeCodeModel(Model):
         """The system/provider name."""
         return "claude-code"
 
+
+    def _convert_tools_to_client_format(self, tools: list) -> list[dict]:
+        """Convert Pydantic AI tool definitions to client format.
+        
+        Args:
+            tools: List of ToolDefinition objects from Pydantic AI
+            
+        Returns:
+            List of tool dicts for CustomClaudeCodeClient
+        """
+        result = []
+        for tool in tools:
+            result.append({
+                'name': tool.name,
+                'description': tool.description,
+                'parameters_json_schema': tool.parameters_json_schema
+            })
+        return result
+    
+    def _check_for_tool_returns(self, messages: list[_messages.ModelMessage]) -> list[_messages.ToolReturnPart]:
+        """Check if messages contain tool return parts from previous turns.
+        
+        Args:
+            messages: Message history
+            
+        Returns:
+            List of ToolReturnPart objects
+        """
+        tool_returns = []
+        for msg in messages:
+            if isinstance(msg, _messages.ModelResponse):
+                for part in msg.parts:
+                    if isinstance(part, _messages.ToolReturnPart):
+                        tool_returns.append(part)
+        return tool_returns
+
     async def request(
         self,
         messages: list[_messages.ModelMessage],
@@ -75,8 +111,59 @@ class ClaudeCodeModel(Model):
 
             system_prompt = self._extract_system_messages(messages)
 
-            # Check if this is a structured output request (tool mode)
+            # Check for function tools (NEW: user-defined tools that Claude can call)
             if (model_request_parameters and
+                hasattr(model_request_parameters, 'function_tools') and
+                model_request_parameters.function_tools):
+                
+                # Check if this is a continuation with tool results
+                tool_returns = self._check_for_tool_returns(messages)
+                
+                if tool_returns:
+                    # This is a continuation after tool execution
+                    # For now, we'll process tool results by appending them to the message
+                    tool_results_text = "\n\n".join([
+                        f"Tool '{tr.tool_name}' returned: {tr.content}"
+                        for tr in tool_returns
+                    ])
+                    
+                    # Append tool results to user content
+                    if isinstance(user_content, str):
+                        user_content = f"{user_content}\n\n{tool_results_text}"
+                    else:
+                        user_content.append({"type": "text", "text": tool_results_text})
+                
+                # Convert tools to client format
+                tools = self._convert_tools_to_client_format(model_request_parameters.function_tools)
+                
+                # Use tools query
+                result = await self._client.tools_query(
+                    message=user_content,
+                    tools=tools,
+                    system_prompt=system_prompt
+                )
+                
+                # Check if Claude called any tools
+                if result['tool_calls']:
+                    # Return tool calls for Pydantic AI to execute
+                    parts = []
+                    for tc in result['tool_calls']:
+                        parts.append(_messages.ToolCallPart(
+                            tool_name=tc['tool_name'],
+                            args=tc['args'],
+                            tool_call_id=tc['tool_call_id']
+                        ))
+                    
+                    return ModelResponse(
+                        parts=parts,
+                        timestamp=datetime.now(),
+                    )
+                else:
+                    # No tool calls, return text response
+                    return self._convert_response(result['text'])
+
+            # Check if this is a structured output request (tool mode)
+            elif (model_request_parameters and
                 hasattr(model_request_parameters, 'output_mode') and
                 model_request_parameters.output_mode == 'tool' and
                 model_request_parameters.output_tools):

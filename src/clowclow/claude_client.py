@@ -383,3 +383,160 @@ Do not include any text outside of the JSON response."""
         return await self._structured_query_schema_tag(
             message, pydantic_class, system_prompt, custom_instructions, max_turns
         )
+
+    async def tools_query(
+        self,
+        message: str | list[dict],
+        tools: list[dict],
+        system_prompt: str | None = None,
+        max_turns: int = 5
+    ) -> dict:
+        """Execute a query with function tools available.
+
+        Args:
+            message: The user message/query (str or list of content blocks for multimodal)
+            tools: List of tool definitions in Pydantic AI format
+            system_prompt: Optional system prompt
+            max_turns: Maximum number of conversation turns
+
+        Returns:
+            Dict with 'tool_calls' (list of tool call dicts) and 'text' (final response text)
+        """
+        from claude_agent_sdk import tool, create_sdk_mcp_server, ClaudeAgentOptions, ClaudeSDKClient, HookMatcher
+        
+        temp_image_files = []
+        tool_calls_captured = []
+        
+        try:
+            # Create hook to capture tool calls BEFORE execution
+            async def capture_tool_calls_hook(input_data, tool_use_id, context):
+                """Capture tool calls for Pydantic AI to execute."""
+                tool_name = input_data.get('tool_name', '')
+                
+                # Check if this is one of our Pydantic AI tools
+                if tool_name.startswith('mcp__pydantic-tools__'):
+                    actual_tool_name = tool_name.replace('mcp__pydantic-tools__', '')
+                    tool_input = input_data.get('tool_input', {})
+                    
+                    # Store the tool call
+                    tool_calls_captured.append({
+                        'tool_name': actual_tool_name,
+                        'args': tool_input,
+                        'tool_call_id': tool_use_id
+                    })
+                    
+                    # Allow the tool to execute (it will return placeholder text)
+                    return {}
+                
+                # For other tools (Read, Write), let them execute normally
+                return {}
+            
+            # Create MCP tools from Pydantic AI tool definitions
+            mcp_tools = []
+            
+            for tool_def in tools:
+                tool_name = tool_def['name']
+                tool_description = tool_def.get('description', '')
+                tool_schema = tool_def.get('parameters_json_schema', {})
+                
+                # Create async tool function that returns placeholder
+                async def tool_func(args, *, _tool_name=tool_name):
+                    # Return placeholder - actual execution happens in Pydantic AI
+                    return {
+                        "content": [{
+                            "type": "text",
+                            "text": f"[Tool {_tool_name} will be executed by Pydantic AI]"
+                        }]
+                    }
+                
+                # Register as MCP tool
+                mcp_tool = tool(tool_name, tool_description, tool_schema)(tool_func)
+                mcp_tools.append(mcp_tool)
+            
+            # Create SDK MCP server
+            server = create_sdk_mcp_server(
+                name="pydantic-tools",
+                version="1.0.0",
+                tools=mcp_tools
+            )
+            
+            # Prepare allowed tools list
+            allowed_tools = [f"mcp__pydantic-tools__{t['name']}" for t in tools]
+            
+            # Handle multimodal content by saving images to files
+            if isinstance(message, list):
+                prompt_parts = []
+                
+                for block in message:
+                    if block.get("type") == "text":
+                        prompt_parts.append(block["text"])
+                    elif block.get("type") == "image":
+                        # Save image to temp file
+                        import base64
+                        import time
+                        
+                        source = block.get("source", {})
+                        if source.get("type") == "base64":
+                            # Decode base64 image
+                            image_data = base64.b64decode(source["data"])
+                            media_type = source.get("media_type", "image/png")
+                            ext = media_type.split("/")[-1]
+                            
+                            # Create temp file
+                            timestamp = int(time.time() * 1000)
+                            temp_filename = f"vision_input_{timestamp}.{ext}"
+                            temp_filepath = Path(self.workspace_dir) / temp_filename
+                            
+                            # Write image data
+                            with open(temp_filepath, 'wb') as f:
+                                f.write(image_data)
+                                f.flush()
+                                import os
+                                os.fsync(f.fileno())
+                            
+                            temp_image_files.append(str(temp_filepath))
+                            prompt_parts.append(f"Please read and analyze the image file at this exact path: {temp_filepath.absolute()}")
+                
+                final_prompt = "\n\n".join(prompt_parts)
+            else:
+                final_prompt = message
+            
+            # Configure options with MCP server and hook
+            options = ClaudeAgentOptions(
+                system_prompt=system_prompt or "You are a helpful assistant.",
+                max_turns=max_turns,
+                cwd=str(self.workspace_dir),
+                permission_mode="bypassPermissions",  # Auto-accept so tools execute and we capture them
+                allowed_tools=["Read", "Write"] + allowed_tools,
+                mcp_servers={"pydantic-tools": server},
+                hooks={
+                    "PreToolUse": [HookMatcher(
+                        hooks=[capture_tool_calls_hook]  # List of hook functions
+                    )]
+                }
+            )
+            
+            response_parts = []
+            
+            async with ClaudeSDKClient(options=options) as client:
+                await client.query(final_prompt)
+                
+                # Collect the streaming response
+                async for response_message in client.receive_response():
+                    if hasattr(response_message, 'content'):
+                        for block in response_message.content:
+                            if hasattr(block, 'text'):
+                                response_parts.append(block.text)
+            
+            return {
+                'tool_calls': tool_calls_captured,
+                'text': ''.join(response_parts)
+            }
+            
+        finally:
+            # Clean up temporary image files
+            for temp_file in temp_image_files:
+                try:
+                    Path(temp_file).unlink()
+                except Exception:
+                    pass

@@ -18,21 +18,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - Wraps `ClaudeSDKClient` for internal use
    - Provides `simple_query()` for text responses
    - Provides `structured_query()` for Pydantic model responses using `<schema>` tag method
+   - Provides `tools_query()` for function tool calling via MCP integration
    - Handles multimodal inputs by converting base64 images to temp files
 
 ### Architecture Flow
 
 1. Pydantic AI agent calls `ClaudeCodeModel.request()` or `request_stream()`
 2. Model extracts messages, system prompts, and checks for images
-3. For structured output (tool mode):
+3. For function tools (user-defined tools):
+   - Checks for `function_tools` in model request parameters
+   - Converts tools to MCP format and creates SDK MCP server
+   - Uses PreToolUse hook to capture tool calls before execution
+   - Calls `tools_query()` which returns tool call info
+   - Converts tool calls to `ToolCallPart` for Pydantic AI to execute
+   - Handles tool results from `ToolReturnPart` in subsequent turns
+4. For structured output (output tool mode):
    - Extracts JSON schema from tool definition
    - Creates dynamic Pydantic model using `create_model()`
    - Calls `structured_query()` which embeds schema in `<schema>` tags
    - Converts result to `ToolCallPart` for Pydantic AI
-4. For text output:
+5. For text output:
    - Calls `simple_query()`
    - Converts to `TextPart` for Pydantic AI
-5. Client uses `ClaudeSDKClient` under the hood with configured options
+6. Client uses `ClaudeSDKClient` under the hood with configured options
 
 ## Development Commands
 
@@ -92,5 +100,14 @@ pytest -v -k "asyncio"
 ### Message Extraction Logic
 - Extracts most recent user message from message history
 - Combines all system messages with newlines
-- Handles `UserPromptPart`, `TextPart`, `BinaryContent`, and `ImageUrl` types
+- Handles `UserPromptPart`, `TextPart`, `BinaryContent`, `ImageUrl`, and `ToolReturnPart` types
 - Detects multimodal content by checking for image types or list-based content
+
+### Function Tool Calling (NEW)
+- Supports Pydantic AI function tools via MCP (Model Context Protocol) integration
+- Tools are registered as SDK MCP server tools with custom schemas
+- Uses PreToolUse hooks to intercept tool calls before SDK executes them
+- Returns tool call info to Pydantic AI for actual execution
+- Handles multi-turn conversations with tool results
+- Compatible with both sync and async tools
+- Requires `permission_mode="bypassPermissions"` for automatic tool execution capture
