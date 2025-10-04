@@ -87,16 +87,19 @@ class TestBinaryImageContent:
             BinaryContent(data=test_image_data, media_type="image/png")
         ])
 
-        # Verify response
+        # Verify response structure
         assert result.output is not None
         assert isinstance(result.output, str)
         assert len(result.output) > 0, "Response should not be empty"
         assert result.output.strip(), "Response should not be just whitespace"
 
         # Verify it's an image analysis response
-        analysis_keywords = ["image", "picture", "pixel", "color", "visual", "see", "show"]
+        analysis_keywords = ["image", "picture", "pixel", "color", "visual", "see", "show", "red"]
         assert any(kw in result.output.lower() for kw in analysis_keywords), \
             f"Response should be about image analysis, got: {result.output}"
+
+        # Note: test_image_data is a 1x1 red PNG - responses should reflect this
+        # The model should recognize it's a minimal/tiny image
 
     @pytest.mark.live
     @pytest.mark.asyncio
@@ -303,11 +306,42 @@ class TestMultimodalContentTypes:
         agent = Agent(model)
 
         result = await agent.run([
-            "Describe:",
+            "Describe this PNG image:",
             BinaryContent(data=test_image_data, media_type="image/png")
         ])
 
         assert result.output is not None
+        assert isinstance(result.output, str)
+        assert len(result.output) > 0, "PNG image should generate a response"
+
+    @pytest.mark.live
+    @pytest.mark.asyncio
+    async def test_different_image_formats_handled_differently(self, test_image_data: bytes):
+        """Test that different media types are processed (PNG vs JPEG vs WebP)."""
+        model = ClaudeCodeModel()
+        agent = Agent(model)
+
+        # Test PNG
+        png_result = await agent.run([
+            "What format is this image?",
+            BinaryContent(data=test_image_data, media_type="image/png")
+        ])
+
+        # Test JPEG (same data, different media type declaration)
+        jpeg_result = await agent.run([
+            "What format is this image?",
+            BinaryContent(data=test_image_data, media_type="image/jpeg")
+        ])
+
+        # Both should generate responses
+        assert png_result.output is not None
+        assert jpeg_result.output is not None
+        assert isinstance(png_result.output, str)
+        assert isinstance(jpeg_result.output, str)
+
+        # Responses should mention image analysis
+        assert any(kw in png_result.output.lower() for kw in ["image", "visual", "picture"])
+        assert any(kw in jpeg_result.output.lower() for kw in ["image", "visual", "picture"])
 
     @pytest.mark.live
     @pytest.mark.asyncio

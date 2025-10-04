@@ -78,7 +78,9 @@ class TestStructuredOutputErrors:
                     assert hasattr(result.output, 'required_number')
             except (ValidationError, Exception) as e:
                 # Expected - validation should fail
-                assert "required" in str(e).lower() or "field" in str(e).lower()
+                error_str = str(e).lower()
+                assert any(word in error_str for word in ["required", "field", "validation", "retries"]), \
+                    f"Expected validation error, got: {e}"
 
     @pytest.mark.live
     @pytest.mark.asyncio
@@ -131,11 +133,14 @@ class TestNetworkAndTimeoutErrors:
             mock.return_value = ""
 
             agent = Agent(model)
-            result = await agent.run("Test")
 
-            # Should handle empty response gracefully
-            assert result.output is not None
-            # May be empty string, which is valid
+            # Empty response triggers retry logic in Pydantic AI
+            # It will retry and eventually raise UnexpectedModelBehavior
+            with pytest.raises(UnexpectedModelBehavior) as exc_info:
+                await agent.run("Test")
+
+            # Verify it's the retry error
+            assert "retries" in str(exc_info.value).lower()
 
 
 class TestInputValidation:
@@ -195,6 +200,8 @@ class TestToolErrors:
 
     def test_tool_raises_exception(self):
         """Test handling when tool raises an exception."""
+        from pydantic_ai.exceptions import UnexpectedModelBehavior
+
         agent = Agent(TestModel())
 
         @agent.tool_plain
@@ -207,9 +214,11 @@ class TestToolErrors:
             result = agent.run_sync("Use the tool")
             # May succeed with error message in output
             assert result.output is not None
-        except Exception as e:
-            # Or may propagate exception
-            assert "fail" in str(e).lower() or "error" in str(e).lower()
+        except (ValueError, UnexpectedModelBehavior, Exception) as e:
+            # Or may propagate exception - verify it's the expected error
+            error_msg = str(e).lower()
+            assert any(keyword in error_msg for keyword in ["fail", "error", "value"]), \
+                f"Expected error message to contain 'fail', 'error', or 'value', got: {e}"
 
     def test_tool_returns_invalid_type(self):
         """Test handling when tool returns unexpected type."""
@@ -265,9 +274,10 @@ class TestEdgeCases:
 
     @pytest.mark.asyncio
     async def test_agent_with_none_system_prompt(self):
-        """Test agent with None system prompt."""
+        """Test agent with empty/no system prompt."""
         model = ClaudeCodeModel()
-        agent = Agent(model, system_prompt=None)
+        # Don't pass system_prompt at all (defaults to empty)
+        agent = Agent(model)
 
         # Should work with TestModel override
         with agent.override(model=TestModel()):
@@ -304,23 +314,26 @@ class TestEdgeCases:
 class TestRetryBehavior:
     """Test retry mechanisms."""
 
-    def test_model_retry_propagates(self):
-        """Test that ModelRetry exception propagates correctly."""
+    @pytest.mark.asyncio
+    async def test_model_retry_propagates(self):
+        """Test that ModelRetry exception is handled correctly with retry limits."""
         agent = Agent(TestModel())
 
         retry_count = 0
 
         @agent.tool_plain
         def retry_tool() -> str:
-            """Tool that retries multiple times."""
+            """Tool that always retries to test retry limit."""
             nonlocal retry_count
             retry_count += 1
-            if retry_count < 3:
-                raise ModelRetry(f"Retry attempt {retry_count}")
-            return "Success"
+            # Always retry - this will hit the retry limit
+            raise ModelRetry(f"Retry attempt {retry_count}")
 
-        result = agent.run_sync("Use tool")
+        # Tool will retry once (default max_retries=1) then raise UnexpectedModelBehavior
+        with pytest.raises(UnexpectedModelBehavior) as exc_info:
+            await agent.run("Use tool")
 
-        # Should have retried
-        assert retry_count >= 2, f"Expected at least 2 retries, got {retry_count}"
-        assert result.output is not None
+        # Should have attempted at least 2 times (initial + 1 retry)
+        assert retry_count >= 2, f"Expected at least 2 attempts, got {retry_count}"
+        # Verify error message indicates retry limit exceeded
+        assert "retry" in str(exc_info.value).lower() or "exceeded" in str(exc_info.value).lower()

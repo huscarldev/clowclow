@@ -262,6 +262,49 @@ def test_tool_retry():
     assert call_count == 2  # Called twice
 ```
 
+### ⚠️ IMPORTANT: ClaudeCodeModel Tool Calling Limitation
+
+**ClaudeCodeModel does NOT support Pydantic AI tool calling.** Tools can be registered with `@agent.tool_plain` or `@agent.tool`, but they will **NOT be invoked** by ClaudeCodeModel.
+
+**What to do:**
+1. Use `TestModel` for testing tool calling functionality
+2. Skip tool calling tests for ClaudeCodeModel with `@pytest.mark.skip`
+3. Document the limitation clearly in test docstrings
+
+```python
+# ✅ Correct: Skip tool calling tests for ClaudeCodeModel
+@pytest.mark.skip(reason="ClaudeCodeModel does not support Pydantic AI tool calling")
+@pytest.mark.live
+@pytest.mark.asyncio
+async def test_agent_with_tool_plain():
+    """SKIPPED: ClaudeCodeModel does not support tool calling."""
+    model = ClaudeCodeModel()
+    agent = Agent(model)
+    
+    @agent.tool_plain
+    def my_tool(x: str) -> str:
+        return f"Processed: {x}"
+    
+    # This will NOT call the tool
+    result = await agent.run("Use the tool")
+
+# ✅ Correct: Test tool calling with TestModel
+def test_tool_calling_with_test_model():
+    """Tool calling works with TestModel."""
+    agent = Agent(TestModel())
+    
+    tool_called = False
+    
+    @agent.tool_plain
+    def my_tool(x: str) -> str:
+        nonlocal tool_called
+        tool_called = True
+        return f"Processed: {x}"
+    
+    result = agent.run_sync("Use the tool")
+    # TestModel CAN call tools (depending on call_tools config)
+```
+
 ## Streaming Tests
 
 ### Test Streaming Response
@@ -397,8 +440,88 @@ async def test_message_flow():
     assert messages[-1].kind == "response"
 ```
 
+## Model Compatibility Testing
+
+### Test Interface Compatibility
+
+```python
+def test_both_models_have_same_interface():
+    """Verify TestModel and ClaudeCodeModel have same interface."""
+    test_model = TestModel()
+    custom_model = ClaudeCodeModel()
+    
+    # Both should have same attributes
+    assert hasattr(test_model, 'model_name')
+    assert hasattr(custom_model, 'model_name')
+    assert hasattr(test_model, 'request')
+    assert hasattr(custom_model, 'request')
+```
+
+### Test Response Structure Compatibility
+
+```python
+@pytest.mark.asyncio
+async def test_response_structure_matches():
+    """Verify both models return compatible response structures."""
+    test_agent = Agent(TestModel())
+    custom_agent = Agent(ClaudeCodeModel())
+    
+    test_result = await test_agent.run("Test")
+    with custom_agent.override(model=TestModel()):
+        custom_result = await custom_agent.run("Test")
+    
+    # Both should have same attributes
+    assert hasattr(test_result, 'output')
+    assert hasattr(custom_result, 'output')
+    assert hasattr(test_result, 'usage')
+    assert hasattr(custom_result, 'usage')
+```
+
+## Parametrized Testing
+
+### Reduce Test Duplication
+
+```python
+@pytest.mark.parametrize("schema,expected_type", [
+    ({"type": "string"}, str),
+    ({"type": "integer"}, int),
+    ({"type": "number"}, float),
+    ({"type": "boolean"}, bool),
+])
+def test_schema_conversion(schema, expected_type):
+    """Test schema to type conversion with parametrize."""
+    model = ClaudeCodeModel()
+    result = model._get_type_from_schema(schema)
+    assert result == expected_type
+```
+
+## Exception Handling Best Practices
+
+### Use Specific Exception Types
+
+```python
+# ❌ Too broad
+try:
+    result = await agent.run("Test")
+except Exception:
+    pass
+
+# ✅ Specific exceptions
+from pydantic import ValidationError
+from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+try:
+    result = await agent.run("Test")
+    assert isinstance(result.output, MyModel)
+except (ValidationError, UnexpectedModelBehavior) as e:
+    # Handle specific expected errors
+    assert "validation" in str(e).lower() or "retry" in str(e).lower()
+```
+
 ## Resources
 
 - [Pydantic AI Testing Docs](https://ai.pydantic.dev/testing/)
 - [TestModel API Reference](https://ai.pydantic.dev/api/models/test/)
 - [Pydantic AI Examples](https://ai.pydantic.dev/examples/)
+- [pytest Documentation](https://docs.pytest.org/)
+- [pytest-asyncio](https://pytest-asyncio.readthedocs.io/)

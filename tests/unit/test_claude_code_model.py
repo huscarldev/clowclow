@@ -273,61 +273,43 @@ class TestMessageExtractionEdgeCases:
 class TestSchemaTypeConversion:
     """Test JSON schema to Python type conversion."""
 
-    def test_get_type_from_schema_string(self):
-        """Test converting string type."""
+    @pytest.mark.parametrize("schema,expected_type", [
+        ({"type": "string"}, str),
+        ({"type": "integer"}, int),
+        ({"type": "number"}, float),
+        ({"type": "boolean"}, bool),
+    ])
+    def test_get_type_from_schema_primitives(self, schema, expected_type):
+        """Test converting primitive types using parametrize."""
         model = ClaudeCodeModel()
-        schema = {"type": "string"}
         result = model._get_type_from_schema(schema)
-        assert result == str
+        assert result == expected_type
 
-    def test_get_type_from_schema_integer(self):
-        """Test converting integer type."""
+    @pytest.mark.parametrize("items_type,expected_type", [
+        ({"type": "string"}, list[str]),
+        ({"type": "integer"}, list[int]),
+        ({"type": "number"}, list[float]),
+        ({"type": "boolean"}, list[bool]),
+    ])
+    def test_get_type_from_schema_arrays(self, items_type, expected_type):
+        """Test converting array types using parametrize."""
         model = ClaudeCodeModel()
-        schema = {"type": "integer"}
+        schema = {"type": "array", "items": items_type}
         result = model._get_type_from_schema(schema)
-        assert result == int
+        assert result == expected_type
 
-    def test_get_type_from_schema_number(self):
-        """Test converting number (float) type."""
+    @pytest.mark.parametrize("value_type,expected_type", [
+        ({"type": "string"}, dict[str, str]),
+        ({"type": "integer"}, dict[str, int]),
+        ({"type": "number"}, dict[str, float]),
+        ({"type": "boolean"}, dict[str, bool]),
+    ])
+    def test_get_type_from_schema_objects(self, value_type, expected_type):
+        """Test converting object types using parametrize."""
         model = ClaudeCodeModel()
-        schema = {"type": "number"}
+        schema = {"type": "object", "additionalProperties": value_type}
         result = model._get_type_from_schema(schema)
-        assert result == float
-
-    def test_get_type_from_schema_boolean(self):
-        """Test converting boolean type."""
-        model = ClaudeCodeModel()
-        schema = {"type": "boolean"}
-        result = model._get_type_from_schema(schema)
-        assert result == bool
-
-    def test_get_type_from_schema_array_of_strings(self):
-        """Test converting array type."""
-        model = ClaudeCodeModel()
-        schema = {"type": "array", "items": {"type": "string"}}
-        result = model._get_type_from_schema(schema)
-        assert result == list[str]
-
-    def test_get_type_from_schema_array_of_integers(self):
-        """Test converting array of integers."""
-        model = ClaudeCodeModel()
-        schema = {"type": "array", "items": {"type": "integer"}}
-        result = model._get_type_from_schema(schema)
-        assert result == list[int]
-
-    def test_get_type_from_schema_object(self):
-        """Test converting object type."""
-        model = ClaudeCodeModel()
-        schema = {"type": "object", "additionalProperties": {"type": "string"}}
-        result = model._get_type_from_schema(schema)
-        assert result == dict[str, str]
-
-    def test_get_type_from_schema_object_with_int_values(self):
-        """Test converting object with integer values."""
-        model = ClaudeCodeModel()
-        schema = {"type": "object", "additionalProperties": {"type": "integer"}}
-        result = model._get_type_from_schema(schema)
-        assert result == dict[str, int]
+        assert result == expected_type
 
     def test_get_type_from_schema_anyof_with_null(self):
         """Test converting anyOf with null (optional field)."""

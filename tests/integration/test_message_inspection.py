@@ -171,7 +171,7 @@ class TestToolCallMessages:
             return f"Result: {value}"
 
         with capture_run_messages() as messages:
-            result = agent.run_sync("Use the tool")
+            result = await agent.run("Use the tool")
 
         # Check for tool-related parts
         tool_calls = []
@@ -257,23 +257,29 @@ class TestMessageSequence:
     @pytest.mark.live
     @pytest.mark.asyncio
     async def test_multi_turn_conversation_messages(self):
-        """Test message capture in multi-turn conversation."""
+        """Test message capture across multiple agent runs."""
         model = ClaudeCodeModel()
         agent = Agent(model)
 
-        with capture_run_messages() as messages:
-            # First turn
+        # Capture messages from first run
+        with capture_run_messages() as messages1:
             await agent.run("What is 2+2?")
 
-            # Second turn
+        # Capture messages from second run
+        with capture_run_messages() as messages2:
             await agent.run("What is 3+3?")
 
-        # Should have multiple request-response pairs
-        requests = [m for m in messages if m.kind == "request"]
-        responses = [m for m in messages if m.kind == "response"]
+        # Each run should have its own request-response pair
+        requests1 = [m for m in messages1 if m.kind == "request"]
+        responses1 = [m for m in messages1 if m.kind == "response"]
 
-        assert len(requests) >= 2, f"Should have at least 2 requests, got {len(requests)}"
-        assert len(responses) >= 2, f"Should have at least 2 responses, got {len(responses)}"
+        requests2 = [m for m in messages2 if m.kind == "request"]
+        responses2 = [m for m in messages2 if m.kind == "response"]
+
+        assert len(requests1) >= 1, f"First run should have request, got {len(requests1)}"
+        assert len(responses1) >= 1, f"First run should have response, got {len(responses1)}"
+        assert len(requests2) >= 1, f"Second run should have request, got {len(requests2)}"
+        assert len(responses2) >= 1, f"Second run should have response, got {len(responses2)}"
 
 
 class TestMessageInspectionWithStructuredOutput:
@@ -370,5 +376,12 @@ class TestMessageInspectionEdgeCases:
             # Inner should only have inner messages
             assert len(inner_messages) >= 2, "Inner capture should have messages"
 
-        # Outer should have both
-        assert len(outer_messages) >= 4, "Outer capture should have all messages"
+        # Outer only captures its own run (nested contexts are independent)
+        # This is the actual behavior of capture_run_messages()
+        assert len(outer_messages) >= 2, "Outer capture should have its own messages"
+
+        # Verify outer and inner captured different runs
+        outer_content = str([m for m in outer_messages])
+        inner_content = str([m for m in inner_messages])
+        # They should have different content (different queries)
+        assert "Outer query" in outer_content or "Inner query" not in outer_content

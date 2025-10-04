@@ -272,6 +272,8 @@ class TestStructuredOutputErrors:
     @pytest.mark.asyncio
     async def test_structured_output_validation_error(self):
         """Test handling validation errors in structured output."""
+        from pydantic import ValidationError
+        from pydantic_ai.exceptions import UnexpectedModelBehavior
 
         class StrictModel(BaseModel):
             required_field: str
@@ -283,11 +285,15 @@ class TestStructuredOutputErrors:
         # Should raise validation error or handle gracefully
         try:
             result = await agent.run("Get data")
-            # If it succeeds, verify output
+            # If it succeeds, verify output meets requirements
             assert result is not None
-        except Exception:
-            # Validation error expected
-            pass
+            assert isinstance(result.output, StrictModel)
+            assert hasattr(result.output, 'required_field')
+            assert hasattr(result.output, 'number')
+        except (ValidationError, UnexpectedModelBehavior) as e:
+            # Validation error or retry limit exceeded is acceptable
+            assert "validation" in str(e).lower() or "retry" in str(e).lower() or "retries" in str(e).lower(), \
+                f"Expected validation or retry error, got: {e}"
 
 
 class TestStructuredOutputComplexTypes:
