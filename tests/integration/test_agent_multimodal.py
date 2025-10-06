@@ -21,7 +21,7 @@ class TestImageURLInput:
     @pytest.mark.asyncio
     async def test_agent_with_image_url(self, test_image_url: str):
         """Test agent handling image URL input."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Send message with image URL
@@ -45,7 +45,7 @@ class TestImageURLInput:
     @pytest.mark.asyncio
     async def test_agent_with_multiple_image_urls(self):
         """Test agent with multiple image URLs."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run([
@@ -60,7 +60,7 @@ class TestImageURLInput:
     @pytest.mark.asyncio
     async def test_agent_text_and_image_interleaved(self, test_image_url: str):
         """Test interleaving text and images."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run([
@@ -79,7 +79,7 @@ class TestBinaryImageContent:
     @pytest.mark.asyncio
     async def test_agent_with_binary_image(self, test_image_data: bytes):
         """Test agent with binary image content."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run([
@@ -105,7 +105,7 @@ class TestBinaryImageContent:
     @pytest.mark.asyncio
     async def test_agent_with_jpeg_image(self, test_image_data: bytes):
         """Test agent with JPEG image."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run([
@@ -119,7 +119,7 @@ class TestBinaryImageContent:
     @pytest.mark.asyncio
     async def test_agent_with_webp_image(self, test_image_data: bytes):
         """Test agent with WebP image."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run([
@@ -139,7 +139,7 @@ class TestMixedContent:
         self, test_image_url: str, test_image_data: bytes
     ):
         """Test mixing text, image URL, and binary image."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run([
@@ -156,7 +156,7 @@ class TestMixedContent:
     @pytest.mark.asyncio
     async def test_multimodal_with_system_prompt(self, test_image_data: bytes):
         """Test multimodal input with system prompt."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(
             model,
             system_prompt="You are an image analysis expert. Be detailed."
@@ -173,20 +173,16 @@ class TestMixedContent:
 class TestMultimodalWithTools:
     """Test multimodal inputs combined with tools.
 
-    NOTE: ClaudeCodeModel does not support tool calling.
-    This test is skipped for ClaudeCodeModel.
     """
 
-    @pytest.mark.skip(reason="ClaudeCodeModel does not support Pydantic AI tool calling")
     @pytest.mark.live
     @pytest.mark.asyncio
     async def test_image_with_tool_calling(self, test_image_data: bytes):
         """Test image input that triggers tool usage.
 
-        SKIPPED: ClaudeCodeModel does not implement tool calling.
-        Tools can be registered but won't be invoked.
+        ClaudeCodeModel supports tool calling via MCP integration.
         """
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         @agent.tool_plain
@@ -211,7 +207,7 @@ class TestMultimodalStreaming:
     @pytest.mark.asyncio
     async def test_stream_with_image(self, test_image_data: bytes):
         """Test streaming response with image input."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         async with agent.run_stream([
@@ -229,7 +225,7 @@ class TestMultimodalStreaming:
     @pytest.mark.asyncio
     async def test_stream_with_image_url(self, test_image_url: str):
         """Test streaming with image URL."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         async with agent.run_stream([
@@ -250,7 +246,7 @@ class TestMultimodalErrorHandling:
     @pytest.mark.asyncio
     async def test_invalid_image_url(self):
         """Test handling invalid image URL."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Invalid URL should still be processed
@@ -267,7 +263,7 @@ class TestMultimodalErrorHandling:
     @pytest.mark.asyncio
     async def test_empty_binary_content(self):
         """Test handling empty binary content."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run([
@@ -282,7 +278,7 @@ class TestMultimodalErrorHandling:
     @pytest.mark.asyncio
     async def test_unsupported_content_type(self, test_image_data: bytes):
         """Test handling unsupported content type."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Send with unusual content type
@@ -302,7 +298,7 @@ class TestMultimodalContentTypes:
     @pytest.mark.asyncio
     async def test_png_image(self, test_image_data: bytes):
         """Test PNG image specifically."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run([
@@ -318,7 +314,7 @@ class TestMultimodalContentTypes:
     @pytest.mark.asyncio
     async def test_different_image_formats_handled_differently(self, test_image_data: bytes):
         """Test that different media types are processed (PNG vs JPEG vs WebP)."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Test PNG
@@ -347,7 +343,7 @@ class TestMultimodalContentTypes:
     @pytest.mark.asyncio
     async def test_image_with_explicit_filename(self, test_image_url: str):
         """Test image URL with filename."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # URL with filename
@@ -368,7 +364,7 @@ class TestMultimodalConversations:
     @pytest.mark.asyncio
     async def test_multimodal_followup_questions(self, test_image_data: bytes):
         """Test follow-up questions about image."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # First request with image

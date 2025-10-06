@@ -21,7 +21,7 @@ class TestStreamingBasics:
     @pytest.mark.asyncio
     async def test_run_stream_returns_context_manager(self):
         """Test that run_stream returns an async context manager."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Should return a context manager
@@ -35,7 +35,7 @@ class TestStreamingBasics:
     @pytest.mark.asyncio
     async def test_stream_basic_text(self):
         """Test streaming basic text response."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         async with agent.run_stream("Say hello") as result:
@@ -67,7 +67,7 @@ class TestStreamingBasics:
     @pytest.mark.asyncio
     async def test_stream_completion_status(self):
         """Test stream completion status tracking."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         async with agent.run_stream("Test") as result:
@@ -117,7 +117,7 @@ class TestStreamingMessages:
     @pytest.mark.asyncio
     async def test_stream_with_system_prompt(self):
         """Test streaming with system prompt."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model, system_prompt="You are a helpful assistant.")
 
         async with agent.run_stream("Hello") as result:
@@ -131,7 +131,7 @@ class TestStreamingMessages:
     @pytest.mark.asyncio
     async def test_stream_multiple_messages(self):
         """Test streaming in a conversation context."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # First message
@@ -155,7 +155,7 @@ class TestStreamingDebounce:
     @pytest.mark.asyncio
     async def test_stream_with_debounce(self):
         """Test streaming with debounce timing."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         async with agent.run_stream("Test") as result:
@@ -171,7 +171,7 @@ class TestStreamingDebounce:
     @pytest.mark.asyncio
     async def test_stream_no_debounce_gets_all_chunks(self):
         """Test that no debounce returns all chunks."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         async with agent.run_stream("Test") as result:
@@ -190,7 +190,7 @@ class TestStreamingFinalResult:
     @pytest.mark.asyncio
     async def test_stream_final_output(self):
         """Test accessing final output after streaming completes."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         async with agent.run_stream("What is 2+2?") as result:
@@ -220,7 +220,7 @@ class TestStreamingFinalResult:
     @pytest.mark.asyncio
     async def test_stream_usage_tracking(self):
         """Test usage tracking during streaming."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         async with agent.run_stream("Test") as result:
@@ -239,7 +239,7 @@ class TestStreamingErrors:
     @pytest.mark.asyncio
     async def test_stream_with_invalid_input(self):
         """Test streaming with invalid input."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Empty string should still work (may return empty or error message)
@@ -259,7 +259,7 @@ class TestStreamingCancellation:
     @pytest.mark.asyncio
     async def test_stream_early_exit(self):
         """Test exiting stream context early."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         async with agent.run_stream("Test") as result:
@@ -274,7 +274,7 @@ class TestStreamingCancellation:
     @pytest.mark.asyncio
     async def test_stream_context_cleanup(self):
         """Test that streaming context cleans up resources."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         async with agent.run_stream("Test") as result:

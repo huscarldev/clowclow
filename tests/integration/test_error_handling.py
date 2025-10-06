@@ -28,7 +28,7 @@ class TestStructuredOutputErrors:
             name: str
             value: int
 
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
 
         # Mock structured_query to return malformed response
         with patch.object(model._client, 'structured_query', new_callable=AsyncMock) as mock:
@@ -56,7 +56,7 @@ class TestStructuredOutputErrors:
             required_field: str
             required_number: int
 
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
 
         # Mock to return partial data
         with patch.object(model._client, 'structured_query', new_callable=AsyncMock) as mock:
@@ -91,7 +91,7 @@ class TestStructuredOutputErrors:
             positive_number: int = Field(gt=0, description="Must be positive")
             limited_string: str = Field(max_length=10, description="Max 10 chars")
 
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model, output_type=ConstrainedModel)
 
         # Ask for data that should meet constraints
@@ -110,7 +110,7 @@ class TestNetworkAndTimeoutErrors:
     @pytest.mark.asyncio
     async def test_client_exception_handling(self):
         """Test that client exceptions are properly wrapped."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
 
         with patch.object(model._client, 'simple_query', new_callable=AsyncMock) as mock:
             mock.side_effect = Exception("Connection timeout")
@@ -127,7 +127,7 @@ class TestNetworkAndTimeoutErrors:
     @pytest.mark.asyncio
     async def test_empty_response_handling(self):
         """Test handling of empty/None responses from client."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
 
         with patch.object(model._client, 'simple_query', new_callable=AsyncMock) as mock:
             mock.return_value = ""
@@ -150,7 +150,7 @@ class TestInputValidation:
     @pytest.mark.asyncio
     async def test_very_long_prompt(self):
         """Test handling of very long prompts."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Create a long prompt
@@ -167,7 +167,7 @@ class TestInputValidation:
     @pytest.mark.asyncio
     async def test_special_characters_in_prompt(self):
         """Test handling of special characters in prompts."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Prompt with various special characters
@@ -183,7 +183,7 @@ class TestInputValidation:
     @pytest.mark.asyncio
     async def test_unicode_and_emoji_in_prompt(self):
         """Test handling of Unicode and emoji characters."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         unicode_prompt = "What does this mean: 你好 🌍 Здравствуй مرحبا"
@@ -243,7 +243,7 @@ class TestConcurrentRequests:
         """Test handling multiple concurrent requests."""
         import asyncio
 
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Make 3 concurrent requests
@@ -275,7 +275,7 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_agent_with_none_system_prompt(self):
         """Test agent with empty/no system prompt."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         # Don't pass system_prompt at all (defaults to empty)
         agent = Agent(model)
 
@@ -288,7 +288,7 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_empty_string_query(self):
         """Test handling of empty string query."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run("")
@@ -301,7 +301,7 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_whitespace_only_query(self):
         """Test handling of whitespace-only query."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run("   \n\t  ")

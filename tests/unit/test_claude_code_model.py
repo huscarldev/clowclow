@@ -1,14 +1,13 @@
 """Unit tests for ClaudeCodeModel - testing Model interface compliance.
 
 These tests use mocks to avoid hitting the live Claude Code API.
-They verify the Model interface implementation and internal logic.
+They verify the Model interface implementation and integration with the client.
 """
 
 from __future__ import annotations
 
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
-from datetime import datetime
 
 from pydantic import BaseModel
 from pydantic_ai.messages import (
@@ -16,7 +15,6 @@ from pydantic_ai.messages import (
     UserPromptPart,
     TextPart,
     BinaryContent,
-    ImageUrl,
     ToolCallPart,
 )
 from pydantic_ai.models import ModelRequestParameters
@@ -51,77 +49,7 @@ class TestClaudeCodeModelInterface:
     def test_initialization_with_workspace_dir(self, test_workspace):
         """Test model initializes with custom workspace directory."""
         model = ClaudeCodeModel(workspace_dir=test_workspace)
-        assert model._client.workspace_dir == test_workspace
-
-
-class TestModelMessageHandling:
-    """Test message extraction and handling."""
-
-    def test_extract_user_message_from_text_part(self):
-        """Test extracting user message from TextPart."""
-        model = ClaudeCodeModel()
-
-        messages = [
-            ModelRequest(
-                parts=[TextPart(content="Hello world")],
-                kind="request"
-            )
-        ]
-
-        user_msg = model._extract_user_message(messages)
-        assert user_msg == "Hello world"
-
-    def test_extract_user_message_multiple_parts(self):
-        """Test extracting user message with multiple parts."""
-        model = ClaudeCodeModel()
-
-        messages = [
-            ModelRequest(
-                parts=[
-                    UserPromptPart(content="Part 1"),
-                    UserPromptPart(content="Part 2")
-                ],
-                kind="request"
-            )
-        ]
-
-        user_msg = model._extract_user_message(messages)
-        assert "Part 1" in user_msg
-        assert "Part 2" in user_msg
-
-    def test_extract_system_messages(self):
-        """Test extracting system messages from instructions."""
-        model = ClaudeCodeModel()
-
-        messages = [
-            ModelRequest(
-                parts=[UserPromptPart(content="User message")],
-                kind="request",
-                instructions="System instruction 1"
-            ),
-            ModelRequest(
-                parts=[UserPromptPart(content="Another message")],
-                kind="request",
-                instructions="System instruction 2"
-            )
-        ]
-
-        system_msg = model._extract_system_messages(messages)
-        assert "System instruction 1" in system_msg
-        assert "System instruction 2" in system_msg
-
-    def test_has_images_detects_no_images(self):
-        """Test that _has_images returns False for text-only messages."""
-        model = ClaudeCodeModel()
-
-        messages = [
-            ModelRequest(
-                parts=[UserPromptPart(content="Text only")],
-                kind="request"
-            )
-        ]
-
-        assert model._has_images(messages) is False
+        assert model._client.config.workspace_dir == test_workspace
 
 
 class TestModelPropertyCompliance:
@@ -154,190 +82,6 @@ class TestModelPropertyCompliance:
         model = ClaudeCodeModel(workspace_dir=workspace)
         assert workspace.exists()
         assert workspace.is_dir()
-
-
-class TestMessageExtractionEdgeCases:
-    """Test edge cases in message extraction logic."""
-
-    def test_extract_user_message_empty_messages(self):
-        """Test extracting from empty message list."""
-        model = ClaudeCodeModel()
-        user_msg = model._extract_user_message([])
-        assert user_msg == ""
-
-    def test_extract_user_message_no_user_parts(self):
-        """Test extracting when no user parts exist."""
-        model = ClaudeCodeModel()
-        messages = [
-            ModelRequest(
-                parts=[],
-                kind="request"
-            )
-        ]
-        user_msg = model._extract_user_message(messages)
-        assert user_msg == ""
-
-    def test_extract_system_messages_empty(self):
-        """Test extracting system messages when none exist."""
-        model = ClaudeCodeModel()
-        system_msg = model._extract_system_messages([])
-        assert system_msg == ""
-
-    def test_extract_system_messages_none_instructions(self):
-        """Test extracting when instructions are None."""
-        model = ClaudeCodeModel()
-        messages = [
-            ModelRequest(
-                parts=[TextPart(content="test")],
-                kind="request",
-                instructions=None
-            )
-        ]
-        system_msg = model._extract_system_messages(messages)
-        assert system_msg == ""
-
-    def test_has_images_detects_binary_content(self):
-        """Test that _has_images detects BinaryContent."""
-        model = ClaudeCodeModel()
-        messages = [
-            ModelRequest(
-                parts=[BinaryContent(data=b"test", media_type="image/png")],
-                kind="request"
-            )
-        ]
-        assert model._has_images(messages) is True
-
-    def test_has_images_detects_image_url(self):
-        """Test that _has_images detects ImageUrl."""
-        model = ClaudeCodeModel()
-        messages = [
-            ModelRequest(
-                parts=[ImageUrl(url="https://example.com/image.png")],
-                kind="request"
-            )
-        ]
-        assert model._has_images(messages) is True
-
-    def test_has_images_detects_list_content(self):
-        """Test that _has_images detects list-based multimodal content."""
-        model = ClaudeCodeModel()
-        messages = [
-            ModelRequest(
-                parts=[UserPromptPart(content=["text", "more text"])],
-                kind="request"
-            )
-        ]
-        assert model._has_images(messages) is True
-
-    def test_extract_multimodal_text_and_binary(self):
-        """Test extracting multimodal content with text and binary image."""
-        model = ClaudeCodeModel()
-        messages = [
-            ModelRequest(
-                parts=[
-                    TextPart(content="Look at this"),
-                    BinaryContent(data=b"\x89PNG", media_type="image/png")
-                ],
-                kind="request"
-            )
-        ]
-        content = model._extract_multimodal_content(messages)
-
-        assert len(content) == 2
-        assert content[0]["type"] == "text"
-        assert content[0]["text"] == "Look at this"
-        assert content[1]["type"] == "image"
-        assert content[1]["source"]["type"] == "base64"
-
-    def test_extract_multimodal_from_user_prompt_list(self):
-        """Test extracting multimodal from UserPromptPart with list content."""
-        model = ClaudeCodeModel()
-        messages = [
-            ModelRequest(
-                parts=[
-                    UserPromptPart(content=[
-                        "Text content",
-                        BinaryContent(data=b"imagedata", media_type="image/jpeg")
-                    ])
-                ],
-                kind="request"
-            )
-        ]
-        content = model._extract_multimodal_content(messages)
-
-        assert len(content) >= 2
-        assert any(block["type"] == "text" for block in content)
-        assert any(block["type"] == "image" for block in content)
-
-
-class TestSchemaTypeConversion:
-    """Test JSON schema to Python type conversion."""
-
-    @pytest.mark.parametrize("schema,expected_type", [
-        ({"type": "string"}, str),
-        ({"type": "integer"}, int),
-        ({"type": "number"}, float),
-        ({"type": "boolean"}, bool),
-    ])
-    def test_get_type_from_schema_primitives(self, schema, expected_type):
-        """Test converting primitive types using parametrize."""
-        model = ClaudeCodeModel()
-        result = model._get_type_from_schema(schema)
-        assert result == expected_type
-
-    @pytest.mark.parametrize("items_type,expected_type", [
-        ({"type": "string"}, list[str]),
-        ({"type": "integer"}, list[int]),
-        ({"type": "number"}, list[float]),
-        ({"type": "boolean"}, list[bool]),
-    ])
-    def test_get_type_from_schema_arrays(self, items_type, expected_type):
-        """Test converting array types using parametrize."""
-        model = ClaudeCodeModel()
-        schema = {"type": "array", "items": items_type}
-        result = model._get_type_from_schema(schema)
-        assert result == expected_type
-
-    @pytest.mark.parametrize("value_type,expected_type", [
-        ({"type": "string"}, dict[str, str]),
-        ({"type": "integer"}, dict[str, int]),
-        ({"type": "number"}, dict[str, float]),
-        ({"type": "boolean"}, dict[str, bool]),
-    ])
-    def test_get_type_from_schema_objects(self, value_type, expected_type):
-        """Test converting object types using parametrize."""
-        model = ClaudeCodeModel()
-        schema = {"type": "object", "additionalProperties": value_type}
-        result = model._get_type_from_schema(schema)
-        assert result == expected_type
-
-    def test_get_type_from_schema_anyof_with_null(self):
-        """Test converting anyOf with null (optional field)."""
-        model = ClaudeCodeModel()
-        schema = {"anyOf": [{"type": "string"}, {"type": "null"}]}
-        result = model._get_type_from_schema(schema)
-        assert result == str | None
-
-    def test_get_type_from_schema_anyof_without_null(self):
-        """Test converting anyOf without null."""
-        model = ClaudeCodeModel()
-        schema = {"anyOf": [{"type": "string"}]}
-        result = model._get_type_from_schema(schema)
-        assert result == str
-
-    def test_get_type_from_schema_ref(self):
-        """Test converting $ref reference."""
-        model = ClaudeCodeModel()
-        schema = {"$ref": "#/$defs/SomeModel"}
-        result = model._get_type_from_schema(schema)
-        assert result == dict
-
-    def test_get_type_from_schema_unknown_defaults_to_string(self):
-        """Test that unknown types default to string."""
-        model = ClaudeCodeModel()
-        schema = {"type": "unknown"}
-        result = model._get_type_from_schema(schema)
-        assert result == str
 
 
 class TestRequestMethodWithMocks:
@@ -487,110 +231,139 @@ class TestRequestMethodWithMocks:
             assert isinstance(message_arg, list)
             assert any(block.get("type") == "image" for block in message_arg)
 
-
-class TestStructuredOutputDynamicModels:
-    """Test dynamic Pydantic model creation from JSON schemas."""
-
     @pytest.mark.asyncio
-    async def test_structured_output_with_optional_fields(self):
-        """Test that optional fields are handled correctly."""
+    async def test_request_with_function_tools(self):
+        """Test request with function tools."""
         model = ClaudeCodeModel()
 
+        # Create a mock function tool
         mock_tool = Mock()
-        mock_tool.name = "output"
+        mock_tool.name = "get_weather"
+        mock_tool.description = "Get weather for a location"
         mock_tool.parameters_json_schema = {
             "type": "object",
             "properties": {
-                "required_field": {"type": "string"},
-                "optional_field": {"type": "string"}
+                "location": {"type": "string"}
             },
-            "required": ["required_field"]
+            "required": ["location"]
         }
 
         params = ModelRequestParameters(
-            output_mode='tool',
-            output_tools=[mock_tool]
+            function_tools=[mock_tool]
         )
 
-        # Mock BaseModel for the response
-        class MockOutput(BaseModel):
-            required_field: str
-            optional_field: str | None = None
+        with patch.object(model._client, 'tools_query', new_callable=AsyncMock) as mock_query:
+            # Mock a tool call response with correct format
+            mock_query.return_value = {
+                "tool_calls": [
+                    {
+                        "tool_name": "get_weather",
+                        "args": {"location": "Paris"},
+                        "tool_call_id": "call_123"
+                    }
+                ],
+                "text": ""
+            }
 
-        with patch.object(model._client, 'structured_query', new_callable=AsyncMock) as mock_query:
-            mock_query.return_value = MockOutput(required_field="value")
+            messages = [
+                ModelRequest(
+                    parts=[TextPart(content="What's the weather in Paris?")],
+                    kind="request"
+                )
+            ]
 
-            messages = [ModelRequest(parts=[TextPart(content="test")], kind="request")]
             result = await model.request(messages, None, params)
 
-            assert result.parts[0].args["required_field"] == "value"
-            assert result.parts[0].args["optional_field"] is None
+            # Should return a ToolCallPart
+            assert len(result.parts) == 1
+            assert isinstance(result.parts[0], ToolCallPart)
+            assert result.parts[0].tool_name == "get_weather"
+            assert result.parts[0].args["location"] == "Paris"
+
+
+class TestStreamingResponse:
+    """Test streaming response functionality."""
 
     @pytest.mark.asyncio
-    async def test_structured_output_with_array_defaults(self):
-        """Test that array fields get [] instead of None."""
+    async def test_request_stream_returns_response(self):
+        """Test that request_stream returns a streaming response."""
         model = ClaudeCodeModel()
 
-        mock_tool = Mock()
-        mock_tool.name = "output"
-        mock_tool.parameters_json_schema = {
+        messages = [
+            ModelRequest(
+                parts=[TextPart(content="Test")],
+                kind="request"
+            )
+        ]
+
+        # request_stream is an async context manager
+        async with model.request_stream(messages, None, ModelRequestParameters()) as stream:
+            # Should return a ClaudeCodeStreamedResponse
+            assert stream is not None
+            assert hasattr(stream, '__aiter__')
+
+
+class TestToolConversion:
+    """Test tool conversion to client format."""
+
+    def test_convert_tools_to_client_format(self):
+        """Test converting Pydantic AI tools to client format."""
+        model = ClaudeCodeModel()
+
+        # Create mock tools with proper attributes
+        tool1 = Mock()
+        tool1.name = "tool1"
+        tool1.description = "First tool"
+        tool1.parameters_json_schema = {
             "type": "object",
-            "properties": {
-                "items": {"type": "array", "items": {"type": "string"}}
-            },
-            "required": []
+            "properties": {"arg1": {"type": "string"}}
         }
 
-        params = ModelRequestParameters(
-            output_mode='tool',
-            output_tools=[mock_tool]
-        )
+        tool2 = Mock()
+        tool2.name = "tool2"
+        tool2.description = "Second tool"
+        tool2.parameters_json_schema = {
+            "type": "object",
+            "properties": {"arg2": {"type": "integer"}}
+        }
 
-        class MockOutput(BaseModel):
-            items: list[str] = []
+        mock_tools = [tool1, tool2]
 
-        with patch.object(model._client, 'structured_query', new_callable=AsyncMock) as mock_query:
-            # Return model with None for items
-            mock_output = MockOutput()
-            mock_output.items = None  # type: ignore
-            mock_query.return_value = mock_output
+        converted = model._convert_tools_to_client_format(mock_tools)
 
-            messages = [ModelRequest(parts=[TextPart(content="test")], kind="request")]
-            result = await model.request(messages, None, params)
+        assert len(converted) == 2
+        assert converted[0]["name"] == "tool1"
+        assert converted[0]["description"] == "First tool"
+        assert converted[0]["parameters_json_schema"]["properties"]["arg1"]["type"] == "string"
+        assert converted[1]["name"] == "tool2"
+        assert converted[1]["description"] == "Second tool"
 
-            # Should post-process None to []
-            assert result.parts[0].args["items"] == []
+
+class TestIntegrationWithRequestHandler:
+    """Test integration with RequestHandler."""
 
     @pytest.mark.asyncio
-    async def test_structured_output_with_object_defaults(self):
-        """Test that object fields get {} instead of None."""
+    async def test_uses_request_handler_for_extraction(self):
+        """Test that model uses RequestHandler for message extraction."""
         model = ClaudeCodeModel()
 
-        mock_tool = Mock()
-        mock_tool.name = "output"
-        mock_tool.parameters_json_schema = {
-            "type": "object",
-            "properties": {
-                "metadata": {"type": "object", "additionalProperties": {"type": "string"}}
-            },
-            "required": []
-        }
+        with patch.object(model._client, 'simple_query', new_callable=AsyncMock) as mock_query:
+            mock_query.return_value = "Response"
 
-        params = ModelRequestParameters(
-            output_mode='tool',
-            output_tools=[mock_tool]
-        )
+            messages = [
+                ModelRequest(
+                    parts=[
+                        UserPromptPart(content="Part 1"),
+                        UserPromptPart(content="Part 2")
+                    ],
+                    kind="request"
+                )
+            ]
 
-        class MockOutput(BaseModel):
-            metadata: dict[str, str] = {}
+            await model.request(messages, None, ModelRequestParameters())
 
-        with patch.object(model._client, 'structured_query', new_callable=AsyncMock) as mock_query:
-            mock_output = MockOutput()
-            mock_output.metadata = None  # type: ignore
-            mock_query.return_value = mock_output
-
-            messages = [ModelRequest(parts=[TextPart(content="test")], kind="request")]
-            result = await model.request(messages, None, params)
-
-            # Should post-process None to {}
-            assert result.parts[0].args["metadata"] == {}
+            # Verify that the extracted message contains both parts
+            call_args = mock_query.call_args
+            message = call_args.kwargs['message']
+            assert "Part 1" in message
+            assert "Part 2" in message

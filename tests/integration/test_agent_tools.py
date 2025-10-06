@@ -36,16 +36,14 @@ class TestToolCalling:
         # TestModel should call tools and return result
         assert result.output is not None
 
-    @pytest.mark.skip(reason="ClaudeCodeModel does not support Pydantic AI tool calling - tools will not be invoked")
     @pytest.mark.live
     @pytest.mark.asyncio
     async def test_agent_with_tool_plain(self):
         """Test agent with a plain tool function.
 
-        SKIPPED: ClaudeCodeModel does not support Pydantic AI tool calling.
-        Tools can be registered but will NOT be invoked by the model.
+        ClaudeCodeModel supports Pydantic AI tool calling via MCP integration.
         """
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         tool_call_count = 0
@@ -66,16 +64,14 @@ class TestToolCalling:
         assert "San Francisco" in tool_args_received
         assert result.output is not None
 
-    @pytest.mark.skip(reason="ClaudeCodeModel does not support Pydantic AI tool calling - async tools will not be invoked")
     @pytest.mark.live
     @pytest.mark.asyncio
     async def test_agent_with_async_tool(self):
         """Test agent with an async tool function.
 
-        SKIPPED: ClaudeCodeModel does not support Pydantic AI tool calling.
-        Async tools can be registered but will NOT be invoked by the model.
+        ClaudeCodeModel supports async tool calling via MCP integration.
         """
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         tool_called = False

@@ -22,7 +22,7 @@ class TestInterfaceCompatibility:
     def test_both_models_have_model_name_property(self):
         """Test that both models have model_name property."""
         test_model = TestModel()
-        claude_model = ClaudeCodeModel()
+        claude_model = ClaudeCodeModel(model=self.claude_model)
 
         assert hasattr(test_model, 'model_name')
         assert hasattr(claude_model, 'model_name')
@@ -32,7 +32,7 @@ class TestInterfaceCompatibility:
     def test_both_models_have_system_property(self):
         """Test that both models have system property."""
         test_model = TestModel()
-        claude_model = ClaudeCodeModel()
+        claude_model = ClaudeCodeModel(model=self.claude_model)
 
         assert hasattr(test_model, 'system')
         assert hasattr(claude_model, 'system')
@@ -40,7 +40,7 @@ class TestInterfaceCompatibility:
     def test_both_models_have_request_method(self):
         """Test that both models have async request method."""
         test_model = TestModel()
-        claude_model = ClaudeCodeModel()
+        claude_model = ClaudeCodeModel(model=self.claude_model)
 
         assert hasattr(test_model, 'request')
         assert hasattr(claude_model, 'request')
@@ -50,7 +50,7 @@ class TestInterfaceCompatibility:
     def test_both_models_have_request_stream_method(self):
         """Test that both models have async request_stream method."""
         test_model = TestModel()
-        claude_model = ClaudeCodeModel()
+        claude_model = ClaudeCodeModel(model=self.claude_model)
 
         assert hasattr(test_model, 'request_stream')
         assert hasattr(claude_model, 'request_stream')
@@ -64,7 +64,7 @@ class TestAgentCreationCompatibility:
     def test_both_models_create_agents_with_same_attributes(self):
         """Test that agents created with both models have the same attributes."""
         test_agent = Agent(TestModel())
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
 
         # Both should have same core attributes
         assert hasattr(test_agent, 'model')
@@ -81,7 +81,7 @@ class TestAgentCreationCompatibility:
         system_prompt = "You are a helpful assistant."
 
         test_agent = Agent(TestModel(), system_prompt=system_prompt)
-        claude_agent = Agent(ClaudeCodeModel(), system_prompt=system_prompt)
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model), system_prompt=system_prompt)
 
         assert test_agent is not None
         assert claude_agent is not None
@@ -89,7 +89,7 @@ class TestAgentCreationCompatibility:
     def test_both_models_accept_deps_type(self):
         """Test that both models accept dependency types."""
         test_agent = Agent(TestModel(), deps_type=dict)
-        claude_agent = Agent(ClaudeCodeModel(), deps_type=dict)
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model), deps_type=dict)
 
         assert test_agent is not None
         assert claude_agent is not None
@@ -102,7 +102,7 @@ class TestResponseStructureCompatibility:
     async def test_both_models_return_result_with_output(self):
         """Test that both models return results with output attribute."""
         test_agent = Agent(TestModel())
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
 
         test_result = await test_agent.run("Test")
         # For Claude, use override with TestModel to avoid live API
@@ -117,7 +117,7 @@ class TestResponseStructureCompatibility:
     async def test_both_models_return_result_with_usage(self):
         """Test that both models return results with usage attribute."""
         test_agent = Agent(TestModel())
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
 
         test_result = await test_agent.run("Test")
         with claude_agent.override(model=TestModel()):
@@ -131,7 +131,7 @@ class TestResponseStructureCompatibility:
     async def test_both_models_return_same_type_for_simple_queries(self):
         """Test that both models return str for simple queries."""
         test_agent = Agent(TestModel())
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
 
         test_result = await test_agent.run("Hello")
         with claude_agent.override(model=TestModel()):
@@ -156,7 +156,7 @@ class TestStructuredOutputCompatibility:
     async def test_both_models_support_structured_output(self):
         """Test that both models support structured output via output_type."""
         test_agent = Agent(TestModel(), output_type=self.SimpleModel)
-        claude_agent = Agent(ClaudeCodeModel(), output_type=self.SimpleModel)
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model), output_type=self.SimpleModel)
 
         test_result = await test_agent.run("Get data")
         with claude_agent.override(model=TestModel()):
@@ -174,7 +174,7 @@ class TestStructuredOutputCompatibility:
             age: int
 
         test_agent = Agent(TestModel(), output_type=Person)
-        claude_agent = Agent(ClaudeCodeModel(), output_type=Person)
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model), output_type=Person)
 
         test_result = await test_agent.run("Create person")
         with claude_agent.override(model=TestModel()):
@@ -194,7 +194,7 @@ class TestStreamingCompatibility:
     async def test_both_models_support_stream_context_manager(self):
         """Test that both models return async context managers for streaming."""
         test_agent = Agent(TestModel())
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
 
         test_stream = test_agent.run_stream("Test")
         with claude_agent.override(model=TestModel()):
@@ -210,7 +210,7 @@ class TestStreamingCompatibility:
     async def test_both_models_support_stream_text(self):
         """Test that both models support stream_text method."""
         test_agent = Agent(TestModel())
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
 
         async with test_agent.run_stream("Test") as test_result:
             assert hasattr(test_result, 'stream_text')
@@ -223,7 +223,7 @@ class TestStreamingCompatibility:
     async def test_both_models_support_get_output_after_streaming(self):
         """Test that both models support get_output() after streaming."""
         test_agent = Agent(TestModel())
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
 
         async with test_agent.run_stream("Test") as test_result:
             async for _ in test_result.stream_text(debounce_by=None):
@@ -246,7 +246,7 @@ class TestMessageCaptureCompatibility:
     async def test_both_models_support_message_capture(self):
         """Test that both models work with capture_run_messages."""
         test_agent = Agent(TestModel())
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
 
         with capture_run_messages() as test_messages:
             await test_agent.run("Test")
@@ -263,7 +263,7 @@ class TestMessageCaptureCompatibility:
     async def test_both_models_capture_request_messages(self):
         """Test that both models capture request messages."""
         test_agent = Agent(TestModel())
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
 
         with capture_run_messages() as test_messages:
             await test_agent.run("Test")
@@ -283,7 +283,7 @@ class TestMessageCaptureCompatibility:
     async def test_both_models_capture_response_messages(self):
         """Test that both models capture response messages."""
         test_agent = Agent(TestModel())
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
 
         with capture_run_messages() as test_messages:
             await test_agent.run("Test")
@@ -323,7 +323,7 @@ class TestKnownDifferences:
         # TestModel CAN call tools (behavior depends on call_tools config)
 
         # ClaudeCodeModel does NOT support tools
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
         claude_tool_called = False
 
         @claude_agent.tool_plain
@@ -338,7 +338,7 @@ class TestKnownDifferences:
     def test_model_name_differences(self):
         """Document model name differences."""
         test_model = TestModel()
-        claude_model = ClaudeCodeModel()
+        claude_model = ClaudeCodeModel(model=self.claude_model)
 
         # Different model names are expected
         assert test_model.model_name == "test"
@@ -359,7 +359,7 @@ class TestKnownDifferences:
         # Result is synthetic from TestModel
 
         # ClaudeCodeModel: real API calls
-        claude_agent = Agent(ClaudeCodeModel())
+        claude_agent = Agent(ClaudeCodeModel(model=self.claude_model))
         claude_result = await claude_agent.run("What is 2+2?")
 
         # Both should have output, but content may differ

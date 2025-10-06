@@ -2,38 +2,46 @@
 
 from __future__ import annotations
 
-import os
-import base64
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncIterator, Literal
 
-from pydantic_ai.models import Model, ModelResponse, ModelRequest, ModelSettings, StreamedResponse, ModelRequestParameters, RunContext, RequestUsage
+from pydantic_ai.models import Model, ModelResponse, ModelSettings, StreamedResponse, ModelRequestParameters, RunContext, RequestUsage
 from pydantic_ai import messages as _messages
 from pydantic_ai._parts_manager import ModelResponsePartsManager
 
-from .claude_client import CustomClaudeCodeClient, BasicResponse
+from .claude_client import CustomClaudeCodeClient
+from .request_handler import RequestHandler
+from .dynamic_model_builder import DynamicModelBuilder
+from .constants import (
+    DEFAULT_TOOL_CALL_ID,
+    STRUCTURED_QUERY_CUSTOM_INSTRUCTIONS,
+    STRUCTURED_QUERY_WITH_TOOLS_INSTRUCTIONS,
+    STRUCTURED_QUERY_FROM_RESPONSE_INSTRUCTIONS
+)
 
 
 class ClaudeCodeModel(Model):
     """A pydantic-ai Model implementation that uses Claude Code SDK."""
-    
+
     def __init__(
-        self, 
-        api_key: str | None = None, 
+        self,
+        api_key: str | None = None,
         model_name: str = "claude-code",
-        workspace_dir: Path | None = None
+        workspace_dir: Path | None = None,
+        model: str | None = None
     ) -> None:
         """Initialize the Claude Code model.
-        
+
         Args:
             api_key: Anthropic API key. If not provided, will use ANTHROPIC_API_KEY env var.
             model_name: Model identifier, defaults to "claude-code"
             workspace_dir: Working directory for temporary files
+            model: Anthropic model to use (e.g., "claude-3-5-sonnet-20241022"). If not provided, uses SDK default.
         """
         self._model_name = model_name
-        self._client = CustomClaudeCodeClient(api_key=api_key, workspace_dir=workspace_dir)
+        self._client = CustomClaudeCodeClient(api_key=api_key, workspace_dir=workspace_dir, model=model)
 
     @property
     def model_name(self) -> str:
@@ -45,13 +53,12 @@ class ClaudeCodeModel(Model):
         """The system/provider name."""
         return "claude-code"
 
-
     def _convert_tools_to_client_format(self, tools: list) -> list[dict]:
         """Convert Pydantic AI tool definitions to client format.
-        
+
         Args:
             tools: List of ToolDefinition objects from Pydantic AI
-            
+
         Returns:
             List of tool dicts for CustomClaudeCodeClient
         """
@@ -63,23 +70,6 @@ class ClaudeCodeModel(Model):
                 'parameters_json_schema': tool.parameters_json_schema
             })
         return result
-    
-    def _check_for_tool_returns(self, messages: list[_messages.ModelMessage]) -> list[_messages.ToolReturnPart]:
-        """Check if messages contain tool return parts from previous turns.
-        
-        Args:
-            messages: Message history
-            
-        Returns:
-            List of ToolReturnPart objects
-        """
-        tool_returns = []
-        for msg in messages:
-            if isinstance(msg, _messages.ModelResponse):
-                for part in msg.parts:
-                    if isinstance(part, _messages.ToolReturnPart):
-                        tool_returns.append(part)
-        return tool_returns
 
     async def request(
         self,
@@ -88,82 +78,62 @@ class ClaudeCodeModel(Model):
         model_request_parameters: ModelRequestParameters
     ) -> ModelResponse:
         """Make a request to Claude Code.
-        
+
         Args:
             messages: The message history to send
             model_settings: Optional model settings
             model_request_parameters: Optional request parameters
-            
+
         Returns:
             The model response
         """
         try:
-            # Check if messages contain images
-            has_images = self._has_images(messages)
+            # Extract messages using RequestHandler
+            has_images = RequestHandler.has_images(messages)
+            user_content = (
+                RequestHandler.extract_multimodal_content(messages)
+                if has_images
+                else RequestHandler.extract_user_message(messages)
+            )
+            system_prompt = RequestHandler.extract_system_messages(messages)
 
-            # Extract messages
-            if has_images:
-                # Use multimodal content extraction
-                user_content = self._extract_multimodal_content(messages)
-            else:
-                # Use text-only extraction
-                user_content = self._extract_user_message(messages)
-
-            system_prompt = self._extract_system_messages(messages)
-
-            # Check for function tools (NEW: user-defined tools that Claude can call)
+            # Check for function tools (user-defined tools that Claude can call)
+            text_from_tools = None
             if (model_request_parameters and
                 hasattr(model_request_parameters, 'function_tools') and
                 model_request_parameters.function_tools):
-                
+
                 # Check if this is a continuation with tool results
-                tool_returns = self._check_for_tool_returns(messages)
-                
+                tool_returns = RequestHandler.check_for_tool_returns(messages)
                 if tool_returns:
-                    # This is a continuation after tool execution
-                    # For now, we'll process tool results by appending them to the message
-                    tool_results_text = "\n\n".join([
-                        f"Tool '{tr.tool_name}' returned: {tr.content}"
-                        for tr in tool_returns
-                    ])
-                    
-                    # Append tool results to user content
-                    if isinstance(user_content, str):
-                        user_content = f"{user_content}\n\n{tool_results_text}"
-                    else:
-                        user_content.append({"type": "text", "text": tool_results_text})
-                
-                # Convert tools to client format
+                    user_content = RequestHandler.append_tool_results_to_content(
+                        user_content, tool_returns
+                    )
+
+                # Convert tools to client format and execute
                 tools = self._convert_tools_to_client_format(model_request_parameters.function_tools)
-                
-                # Use tools query
                 result = await self._client.tools_query(
                     message=user_content,
                     tools=tools,
                     system_prompt=system_prompt
                 )
-                
+
                 # Check if Claude called any tools
                 if result['tool_calls']:
-                    # Return tool calls for Pydantic AI to execute
-                    parts = []
-                    for tc in result['tool_calls']:
-                        parts.append(_messages.ToolCallPart(
+                    parts = [
+                        _messages.ToolCallPart(
                             tool_name=tc['tool_name'],
                             args=tc['args'],
                             tool_call_id=tc['tool_call_id']
-                        ))
-                    
-                    return ModelResponse(
-                        parts=parts,
-                        timestamp=datetime.now(),
-                    )
+                        )
+                        for tc in result['tool_calls']
+                    ]
+                    return ModelResponse(parts=parts, timestamp=datetime.now())
                 else:
-                    # No tool calls, return text response
-                    return self._convert_response(result['text'])
+                    text_from_tools = result['text']
 
             # Check if this is a structured output request (tool mode)
-            elif (model_request_parameters and
+            if (model_request_parameters and
                 hasattr(model_request_parameters, 'output_mode') and
                 model_request_parameters.output_mode == 'tool' and
                 model_request_parameters.output_tools):
@@ -173,75 +143,44 @@ class ClaudeCodeModel(Model):
                 schema_dict = output_tool.parameters_json_schema
                 tool_name = output_tool.name
 
-                # Create a dynamic Pydantic model from the schema
-                from pydantic import create_model
+                # Create dynamic model from schema
+                DynamicModel = DynamicModelBuilder.create_model_from_schema(schema_dict)
 
-                # Build field definitions from schema
-                fields = {}
-                properties = schema_dict.get('properties', {})
-                required = schema_dict.get('required', [])
+                # Determine message and instructions based on context
+                if text_from_tools:
+                    # We have text from tools query, use it to extract structured data
+                    structured_message = self._create_structured_message_from_tools(
+                        user_content, text_from_tools
+                    )
+                    custom_instructions = STRUCTURED_QUERY_WITH_TOOLS_INSTRUCTIONS
+                else:
+                    structured_message = user_content
+                    custom_instructions = STRUCTURED_QUERY_CUSTOM_INSTRUCTIONS
 
-                for field_name, field_schema in properties.items():
-                    field_type = self._get_type_from_schema(field_schema)
-
-                    # Make field optional if not required
-                    if field_name not in required:
-                        # Check if the schema specifies a default value
-                        if 'default' in field_schema:
-                            # Use the default value from the schema
-                            fields[field_name] = (field_type, field_schema['default'])
-                        # Provide default values for optional fields without explicit defaults
-                        elif field_schema.get('type') == 'array':
-                            fields[field_name] = (field_type, [])
-                        elif field_schema.get('type') == 'object':
-                            fields[field_name] = (field_type, {})
-                        else:
-                            # Only add | None if the type doesn't already include None
-                            # (anyOf with null already returns type | None)
-                            if not ('anyOf' in field_schema):
-                                field_type = field_type | None
-                            fields[field_name] = (field_type, None)
-                    else:
-                        # Required field - check if it has a default (shouldn't normally, but handle it)
-                        if 'default' in field_schema:
-                            fields[field_name] = (field_type, field_schema['default'])
-                        else:
-                            fields[field_name] = (field_type, ...)
-
-                # Create the dynamic model
-                DynamicModel = create_model(schema_dict.get('title', 'OutputModel'), **fields)
-
-                # Use structured query for JSON output
+                # Execute structured query
                 structured_response = await self._client.structured_query(
-                    message=user_content,  # Can be str or list[dict]
+                    message=structured_message,
                     pydantic_class=DynamicModel,
                     system_prompt=system_prompt,
-                    custom_instructions="Generate JSON that exactly matches the required schema. For list/array fields, use empty array [] instead of null if there are no items."
+                    custom_instructions=custom_instructions
                 )
 
-                # Post-process: Replace None with [] for list fields and {} for dict fields
-                args = structured_response.model_dump()
-                for field_name, field_schema in properties.items():
-                    if field_schema.get('type') == 'array' and args.get(field_name) is None:
-                        args[field_name] = []
-                    elif field_schema.get('type') == 'object' and args.get(field_name) is None:
-                        args[field_name] = {}
+                # Post-process and convert to tool call
+                args = DynamicModelBuilder.post_process_model_data(
+                    structured_response.model_dump(), schema_dict
+                )
 
-                # Convert to a tool call response (this is what pydantic-ai expects for tool mode)
                 tool_call = _messages.ToolCallPart(
                     tool_name=tool_name,
                     args=args,
-                    tool_call_id="tool_call_1"
+                    tool_call_id=DEFAULT_TOOL_CALL_ID
                 )
 
-                return ModelResponse(
-                    parts=[tool_call],
-                    timestamp=datetime.now(),
-                )
+                return ModelResponse(parts=[tool_call], timestamp=datetime.now())
             else:
-                # Use simple query for text output
+                # Simple text query
                 response = await self._client.simple_query(
-                    message=user_content,  # Can be str or list[dict]
+                    message=user_content,
                     system_prompt=system_prompt
                 )
                 return self._convert_response(response)
@@ -249,176 +188,27 @@ class ClaudeCodeModel(Model):
         except Exception as e:
             raise RuntimeError(f"Claude Code request failed: {e}") from e
 
-    def _extract_user_message(self, messages: list[_messages.ModelMessage]) -> str:
-        """Extract the most recent user message (text only)."""
-        for msg in reversed(messages):
-            if isinstance(msg, _messages.ModelRequest):
-                # Extract text from the parts
-                user_parts = []
-                for part in msg.parts:
-                    if isinstance(part, _messages.UserPromptPart):
-                        user_parts.append(part.content)
-                    elif isinstance(part, _messages.TextPart):
-                        user_parts.append(part.content)
-                return "\n".join(user_parts)
-        return ""
+    @staticmethod
+    def _create_structured_message_from_tools(
+        user_content: str | list[dict],
+        text_from_tools: str
+    ) -> str | list[dict]:
+        """Create a structured message that combines user content with tool response.
 
-    def _extract_multimodal_content(self, messages: list[_messages.ModelMessage]) -> list[dict]:
-        """Extract multimodal content including text and images."""
-        content_blocks = []
+        Args:
+            user_content: Original user content
+            text_from_tools: Text response from tools
 
-        for msg in reversed(messages):
-            if isinstance(msg, _messages.ModelRequest):
-                for part in msg.parts:
-                    # Handle text content
-                    if isinstance(part, _messages.UserPromptPart):
-                        # UserPromptPart.content can be str or list
-                        if isinstance(part.content, str):
-                            content_blocks.append({
-                                "type": "text",
-                                "text": part.content
-                            })
-                        elif isinstance(part.content, list):
-                            # Process each item in the list
-                            for item in part.content:
-                                if isinstance(item, str):
-                                    content_blocks.append({"type": "text", "text": item})
-                                elif isinstance(item, _messages.BinaryContent):
-                                    # Convert BinaryContent to dict
-                                    if isinstance(item.data, bytes):
-                                        image_b64 = base64.b64encode(item.data).decode('utf-8')
-                                    else:
-                                        image_b64 = item.data
-                                    content_blocks.append({
-                                        "type": "image",
-                                        "source": {
-                                            "type": "base64",
-                                            "media_type": item.media_type or "image/png",
-                                            "data": image_b64
-                                        }
-                                    })
-                                elif isinstance(item, _messages.ImageUrl):
-                                    # Convert ImageUrl to dict
-                                    content_blocks.append({
-                                        "type": "image",
-                                        "source": {
-                                            "type": "url",
-                                            "url": item.url
-                                        }
-                                    })
-                                elif isinstance(item, dict):
-                                    # Already a dict, use as-is
-                                    content_blocks.append(item)
-                    elif isinstance(part, _messages.TextPart):
-                        content_blocks.append({
-                            "type": "text",
-                            "text": part.content
-                        })
-                    # Handle image content (base64)
-                    elif isinstance(part, _messages.BinaryContent):
-                        # Encode image data to base64 if not already
-                        if isinstance(part.data, bytes):
-                            image_b64 = base64.b64encode(part.data).decode('utf-8')
-                        else:
-                            image_b64 = part.data
+        Returns:
+            Combined message for structured extraction
+        """
+        addition = f"Original request: {user_content}\n\nResponse from tools: {text_from_tools}\n\nBased on the above information, provide the data in the required structured format."
 
-                        content_blocks.append({
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": part.media_type or "image/png",
-                                "data": image_b64
-                            }
-                        })
-                    # Handle image URLs
-                    elif isinstance(part, _messages.ImageUrl):
-                        content_blocks.append({
-                            "type": "image",
-                            "source": {
-                                "type": "url",
-                                "url": part.url
-                            }
-                        })
-
-                # Return after processing the most recent user message
-                if content_blocks:
-                    return content_blocks
-
-        return content_blocks
-
-    def _has_images(self, messages: list[_messages.ModelMessage]) -> bool:
-        """Check if the messages contain any images."""
-        for msg in messages:
-            if isinstance(msg, _messages.ModelRequest):
-                for part in msg.parts:
-                    # Check direct types
-                    if isinstance(part, (_messages.BinaryContent, _messages.ImageUrl)):
-                        return True
-                    # Check if UserPromptPart contains a list (multimodal)
-                    if isinstance(part, _messages.UserPromptPart):
-                        if isinstance(part.content, list):
-                            return True  # List format indicates multimodal content
-        return False
-
-
-    def _extract_system_messages(self, messages: list[_messages.ModelMessage]) -> str:
-        """Extract and combine system messages."""
-        system_parts = []
-        for msg in messages:
-            if isinstance(msg, _messages.ModelRequest):
-                if msg.instructions:
-                    system_parts.append(msg.instructions)
-        return "\n".join(system_parts)
-
-    def _get_type_from_schema(self, field_schema: dict) -> type:
-        """Convert JSON schema type to Python type."""
-        # Handle $ref references (nested models)
-        if '$ref' in field_schema:
-            # For $ref, treat as dict since we'll handle nested validation separately
-            # The actual structure will be validated by the nested Pydantic model
-            return dict
-
-        # Handle anyOf (union types, including optional fields with None)
-        if 'anyOf' in field_schema:
-            any_of = field_schema['anyOf']
-            # Check if this is an optional field (union with null)
-            has_null = any(item.get('type') == 'null' for item in any_of)
-            # Get the non-null type
-            non_null_types = [item for item in any_of if item.get('type') != 'null']
-            if non_null_types:
-                base_type = self._get_type_from_schema(non_null_types[0])
-                if has_null:
-                    return base_type | None
-                return base_type
-            return str  # Fallback
-
-        schema_type = field_schema.get('type', 'string')
-
-        if schema_type == 'string':
-            return str
-        elif schema_type == 'integer':
-            return int
-        elif schema_type == 'number':
-            return float
-        elif schema_type == 'boolean':
-            return bool
-        elif schema_type == 'array':
-            # Handle arrays like list[str], list[int], etc.
-            items_schema = field_schema.get('items', {})
-            item_type = self._get_type_from_schema(items_schema)
-            return list[item_type]
-        elif schema_type == 'object':
-            # Handle objects like dict[str, int], dict[str, str], etc.
-            additional_properties = field_schema.get('additionalProperties', {})
-            if additional_properties:
-                value_type = self._get_type_from_schema(additional_properties)
-                return dict[str, value_type]
-            else:
-                # If no additionalProperties, treat as generic dict
-                return dict[str, str]
+        if isinstance(user_content, str):
+            return addition
         else:
-            # Default fallback
-            return str
+            # For list content, append as text block
+            return user_content + [{"type": "text", "text": f"\n\nResponse from tools: {text_from_tools}\n\nBased on the above information, provide the data in the required structured format."}]
 
     def _convert_response(self, response: str) -> ModelResponse:
         """Convert Claude Code response to pydantic-ai ModelResponse."""
@@ -458,7 +248,7 @@ class ClaudeCodeModel(Model):
 
 class ClaudeCodeStreamedResponse(StreamedResponse):
     """Streaming response implementation for Claude Code."""
-    
+
     def __init__(
         self,
         model: ClaudeCodeModel,
@@ -498,116 +288,114 @@ class ClaudeCodeStreamedResponse(StreamedResponse):
 
     async def _get_event_iterator(self) -> AsyncIterator[_messages.ModelResponseStreamEvent]:
         """Get an async iterator of stream events."""
-        # For now, we'll implement a simple non-streaming fallback
+        # Note: This is a simple non-streaming fallback
         # TODO: Implement actual streaming if claude-code-sdk supports it
 
         try:
-            # Check if messages contain images
-            has_images = self._model._has_images(self._messages)
+            # Extract messages using RequestHandler
+            has_images = RequestHandler.has_images(self._messages)
+            user_content = (
+                RequestHandler.extract_multimodal_content(self._messages)
+                if has_images
+                else RequestHandler.extract_user_message(self._messages)
+            )
+            system_message = RequestHandler.extract_system_messages(self._messages)
 
-            # Extract messages
-            if has_images:
-                user_content = self._model._extract_multimodal_content(self._messages)
-            else:
-                user_content = self._model._extract_user_message(self._messages)
-
-            system_message = self._model._extract_system_messages(self._messages)
-
-            # Check if this is a structured output request (tool mode)
+            # Check for function tools
+            text_from_tools = None
             if (self._model_request_parameters and
+                hasattr(self._model_request_parameters, 'function_tools') and
+                self._model_request_parameters.function_tools):
+
+                # Check for tool results
+                tool_returns = RequestHandler.check_for_tool_returns(self._messages)
+                if tool_returns:
+                    user_content = RequestHandler.append_tool_results_to_content(
+                        user_content, tool_returns
+                    )
+
+                # Convert tools and execute
+                tools = self._model._convert_tools_to_client_format(
+                    self._model_request_parameters.function_tools
+                )
+                result = await self._model._client.tools_query(
+                    message=user_content,
+                    tools=tools,
+                    system_prompt=system_message
+                )
+
+                # Check if Claude called any tools
+                if result['tool_calls']:
+                    for tc in result['tool_calls']:
+                        yield self._parts_manager.handle_tool_call_part(
+                            vendor_part_id=0,
+                            tool_name=tc['tool_name'],
+                            args=tc['args'],
+                            tool_call_id=tc['tool_call_id']
+                        )
+                    return  # Early return after yielding tool calls
+                else:
+                    text_from_tools = result['text']
+
+            # Check if this is a structured output request
+            if (self._model_request_parameters and
+                hasattr(self._model_request_parameters, 'output_mode') and
                 self._model_request_parameters.output_mode == 'tool' and
                 self._model_request_parameters.output_tools):
 
-                # Extract the JSON schema from the output tool
+                # Extract schema and create dynamic model
                 output_tool = self._model_request_parameters.output_tools[0]
                 schema_dict = output_tool.parameters_json_schema
                 tool_name = output_tool.name
 
-                # Create a dynamic Pydantic model from the schema
-                from pydantic import create_model
+                DynamicModel = DynamicModelBuilder.create_model_from_schema(schema_dict)
 
-                # Build field definitions from schema
-                fields = {}
-                properties = schema_dict.get('properties', {})
-                required = schema_dict.get('required', [])
+                # Determine message and instructions
+                if text_from_tools:
+                    structured_message = self._model._create_structured_message_from_tools(
+                        user_content, text_from_tools
+                    )
+                    custom_instructions = STRUCTURED_QUERY_FROM_RESPONSE_INSTRUCTIONS
+                else:
+                    structured_message = user_content
+                    custom_instructions = STRUCTURED_QUERY_CUSTOM_INSTRUCTIONS
 
-                for field_name, field_schema in properties.items():
-                    field_type = self._model._get_type_from_schema(field_schema)
-
-                    # Make field optional if not required
-                    if field_name not in required:
-                        # Check if the schema specifies a default value
-                        if 'default' in field_schema:
-                            # Use the default value from the schema
-                            fields[field_name] = (field_type, field_schema['default'])
-                        # Provide default values for optional fields without explicit defaults
-                        elif field_schema.get('type') == 'array':
-                            fields[field_name] = (field_type, [])
-                        elif field_schema.get('type') == 'object':
-                            fields[field_name] = (field_type, {})
-                        else:
-                            # Only add | None if the type doesn't already include None
-                            # (anyOf with null already returns type | None)
-                            if not ('anyOf' in field_schema):
-                                field_type = field_type | None
-                            fields[field_name] = (field_type, None)
-                    else:
-                        # Required field - check if it has a default (shouldn't normally, but handle it)
-                        if 'default' in field_schema:
-                            fields[field_name] = (field_type, field_schema['default'])
-                        else:
-                            fields[field_name] = (field_type, ...)
-
-                # Create the dynamic model
-                DynamicModel = create_model(schema_dict.get('title', 'OutputModel'), **fields)
-
-                # Use structured query for JSON output
+                # Execute structured query
                 structured_response = await self._model._client.structured_query(
-                    message=user_content,  # Can be str or list[dict]
+                    message=structured_message,
                     pydantic_class=DynamicModel,
                     system_prompt=system_message,
-                    custom_instructions="Generate JSON that exactly matches the required schema. For list/array fields, use empty array [] instead of null if there are no items."
+                    custom_instructions=custom_instructions
                 )
 
-                # Post-process: Replace None with [] for list fields and {} for dict fields
-                args = structured_response.model_dump()
-                for field_name, field_schema in properties.items():
-                    if field_schema.get('type') == 'array' and args.get(field_name) is None:
-                        args[field_name] = []
-                    elif field_schema.get('type') == 'object' and args.get(field_name) is None:
-                        args[field_name] = {}
-
-                # Convert to a tool call response
-                tool_call = _messages.ToolCallPart(
-                    tool_name=tool_name,
-                    args=args,
-                    tool_call_id="tool_call_1"
+                # Post-process and yield tool call
+                args = DynamicModelBuilder.post_process_model_data(
+                    structured_response.model_dump(), schema_dict
                 )
 
-                # Yield a tool call event using parts manager
                 yield self._parts_manager.handle_tool_call_part(
                     vendor_part_id=0,
-                    tool_name=tool_call.tool_name,
-                    args=tool_call.args,
-                    tool_call_id=tool_call.tool_call_id
+                    tool_name=tool_name,
+                    args=args,
+                    tool_call_id=DEFAULT_TOOL_CALL_ID
                 )
             else:
-                # Make simple text request to Claude Code
+                # Simple text request
                 response = await self._model._client.simple_query(
                     message=user_content,
                     system_prompt=system_message
                 )
 
-                # Yield the response using parts manager
+                # Yield the response
                 maybe_event = self._parts_manager.handle_text_delta(
                     vendor_part_id=0,
                     content=response
                 )
                 if maybe_event is not None:
                     yield maybe_event
-            
+
         except Exception as e:
-            # Yield an error event using parts manager
+            # Yield an error event
             maybe_event = self._parts_manager.handle_text_delta(
                 vendor_part_id=0,
                 content=f"Error: {e}"

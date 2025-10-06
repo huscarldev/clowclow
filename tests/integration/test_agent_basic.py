@@ -34,7 +34,7 @@ class TestBasicAgentIntegration:
 
     def test_agent_creation_with_claude_code_model(self):
         """Test that ClaudeCodeModel can be used to create an Agent."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         assert agent is not None
@@ -43,7 +43,7 @@ class TestBasicAgentIntegration:
 
     def test_agent_with_system_prompt(self):
         """Test creating agent with system prompt."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(
             model,
             system_prompt="You are a helpful assistant."
@@ -70,7 +70,7 @@ class TestLiveBasicIntegration:
     @pytest.mark.asyncio
     async def test_agent_run_simple_query(self):
         """Test running a simple query through the agent with real API."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run("What is 2+2?")
@@ -88,7 +88,7 @@ class TestLiveBasicIntegration:
     @pytest.mark.asyncio
     async def test_agent_with_system_prompt_live(self):
         """Test agent with system prompt using real API."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(
             model,
             system_prompt="You are a concise math tutor. Answer in one sentence."
@@ -106,7 +106,7 @@ class TestLiveBasicIntegration:
     @pytest.mark.live
     def test_agent_run_sync_live(self):
         """Test synchronous agent run with real API."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = agent.run_sync("Say hello")
@@ -125,7 +125,7 @@ class TestAgentWithDependencies:
 
     def test_agent_with_deps_type(self):
         """Test agent with typed dependencies."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
 
         # Create agent with typed dependencies
         agent = Agent(
@@ -139,7 +139,7 @@ class TestAgentWithDependencies:
     @pytest.mark.asyncio
     async def test_agent_with_deps_live(self):
         """Test agent with dependency injection using real API."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
 
         agent = Agent(
             model,
@@ -171,7 +171,7 @@ class TestAgentModelOverride:
     @pytest.mark.asyncio
     async def test_override_model_with_test_model(self):
         """Test overriding ClaudeCodeModel with TestModel for testing."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Override with TestModel for fast testing
@@ -212,7 +212,7 @@ class TestMessageInspection:
     @pytest.mark.asyncio
     async def test_capture_messages_with_claude_code(self):
         """Test message capture with ClaudeCodeModel."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         with capture_run_messages() as messages:
@@ -229,7 +229,7 @@ class TestMessageInspection:
         """Test that system prompt appears in messages."""
         from pydantic_ai.messages import SystemPromptPart
 
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model, system_prompt="You are a helpful assistant.")
 
         with capture_run_messages() as messages:
@@ -265,7 +265,7 @@ class TestAgentBehaviorConsistency:
     def test_agent_initialization_consistency(self):
         """Test that both models initialize agents the same way."""
         test_model = TestModel()
-        claude_model = ClaudeCodeModel()
+        claude_model = ClaudeCodeModel(model=self.claude_model)
 
         test_agent = Agent(test_model)
         claude_agent = Agent(claude_model)
@@ -294,7 +294,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_empty_query_with_claude_code(self):
         """Test empty query with ClaudeCodeModel."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Should handle empty query gracefully
@@ -310,7 +310,7 @@ class TestResponseValidation:
     @pytest.mark.asyncio
     async def test_response_is_nonempty_string(self):
         """Verify response contains actual content."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result = await agent.run("What is 2+2?")
@@ -330,7 +330,7 @@ class TestResponseValidation:
     @pytest.mark.asyncio
     async def test_multiple_runs_maintain_state(self):
         """Test that multiple runs work correctly."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         result1 = await agent.run("What is 3 + 5?")

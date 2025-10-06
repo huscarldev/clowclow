@@ -49,7 +49,7 @@ class TestBasicMessageCapture:
     @pytest.mark.asyncio
     async def test_capture_messages_with_claude_code(self):
         """Test message capture with ClaudeCodeModel."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         with capture_run_messages() as messages:
@@ -74,7 +74,7 @@ class TestSystemPromptInMessages:
     @pytest.mark.asyncio
     async def test_system_prompt_appears_in_messages(self):
         """Test that system prompt is included in message history."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         system_text = "You are a helpful math tutor."
         agent = Agent(model, system_prompt=system_text)
 
@@ -100,7 +100,7 @@ class TestSystemPromptInMessages:
     @pytest.mark.asyncio
     async def test_multiple_system_prompts_in_messages(self):
         """Test handling of multiple system prompts."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(
             model,
             system_prompt="You are helpful.\nYou are concise."
@@ -132,7 +132,7 @@ class TestUserMessageInMessages:
     @pytest.mark.asyncio
     async def test_user_message_content(self):
         """Test that user message content is preserved."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         test_message = "This is a unique test message 12345"
@@ -201,7 +201,7 @@ class TestResponseMessages:
     @pytest.mark.asyncio
     async def test_response_message_structure(self):
         """Test that response messages have correct structure."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         with capture_run_messages() as messages:
@@ -232,7 +232,7 @@ class TestMessageSequence:
     @pytest.mark.asyncio
     async def test_message_order_is_preserved(self):
         """Test that messages appear in correct order."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         with capture_run_messages() as messages:
@@ -258,7 +258,7 @@ class TestMessageSequence:
     @pytest.mark.asyncio
     async def test_multi_turn_conversation_messages(self):
         """Test message capture across multiple agent runs."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         # Capture messages from first run
@@ -294,7 +294,7 @@ class TestMessageInspectionWithStructuredOutput:
             name: str
             value: int
 
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model, output_type=SimpleData)
 
         with capture_run_messages() as messages:
@@ -329,7 +329,7 @@ class TestMessageInspectionWithStreaming:
     @pytest.mark.asyncio
     async def test_messages_captured_during_streaming(self):
         """Test that messages are captured during streaming."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         with capture_run_messages() as messages:
@@ -353,7 +353,7 @@ class TestMessageInspectionEdgeCases:
     @pytest.mark.asyncio
     async def test_messages_with_empty_query(self):
         """Test message capture with empty query."""
-        model = ClaudeCodeModel()
+        model = ClaudeCodeModel(model=self.claude_model)
         agent = Agent(model)
 
         with capture_run_messages() as messages:

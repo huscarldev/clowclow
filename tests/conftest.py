@@ -84,6 +84,47 @@ def test_model_agent() -> Agent:
     return Agent(TestModel())
 
 
+@pytest.fixture(scope="session")
+def claude_model() -> str:
+    """Provide Claude model name for live tests.
+
+    Returns:
+        Model identifier for Claude (currently Claude 3.5 Haiku).
+        Change this fixture to test with different models.
+
+    Available models (Claude 4 family - latest):
+        - "claude-sonnet-4-5-20250929"  # Claude Sonnet 4.5 (best coding, highest intelligence)
+        - "claude-opus-4-1-20250805"    # Claude Opus 4.1 (complex reasoning, instruction adherence)
+        - "claude-opus-4-20250514"      # Claude Opus 4 (world's best coding model)
+        - "claude-sonnet-4-20250514"    # Claude Sonnet 4 (hybrid: instant + extended thinking)
+
+    Available models (Claude 3.7 family):
+        - "claude-3-7-sonnet-20250219"  # Claude Sonnet 3.7 (hybrid AI reasoning model)
+
+    Available models (Claude 3.5 family):
+        - "claude-3-5-haiku-20241022"   # Claude Haiku 3.5 (fast, cost-effective)
+
+    Available models (Claude 3 family - legacy):
+        - "claude-3-haiku-20240307"     # Claude Haiku 3 (fast, older version)
+
+    Note: Using different models may affect test results and performance.
+          Higher-tier models (Opus 4.1, Sonnet 4.5) are more expensive but more capable.
+          For testing, Claude 3.5 Haiku offers good balance of speed and cost.
+    """
+    return "claude-3-5-haiku-20241022"
+
+
+@pytest.fixture(autouse=True)
+def setup_claude_model(request, claude_model):
+    """Automatically inject claude_model into test class instances.
+
+    This fixture runs automatically for all tests and sets self.claude_model
+    for test class methods, so they can use it without adding as a parameter.
+    """
+    if request.instance:  # Only for class-based tests
+        request.instance.claude_model = claude_model
+
+
 @pytest.fixture
 def sample_messages():
     """Provide sample message structures for testing.
