@@ -1,13 +1,19 @@
 [project]
 name = "clowclow"
-version = "0.1.0"
+version = "0.1.1"
 description = "Make Claude Code available to Pydantic AI"
 readme = "README.md"
+homepage = "https://github.com/huscarldev/clowclow"
 requires-python = ">=3.13"
 dependencies = [
     "claude-agent-sdk>=0.1.0",
     "pydantic-ai>=1.0.5",
 ]
+[project.urls]
+"Bug Reports" = "https://github.com/huscarldev/clowclow/issues"
+"Source Code" = "https://github.com/huscarldev/clowclow"
+"Repository" = "https://github.com/huscarldev/clowclow"
+"Documentation" = "https://github.com/huscarldev/clowclow#readme"
 
 [project.scripts]
 clowclow = "clowclow:main"
@@ -19,7 +25,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",
-        "pytest-asyncio>=0.24.0",
+    "pytest-asyncio>=0.24.0",
     "pytest-mock>=3.14.0",
     "inline-snapshot>=0.13.0",
     "dirty-equals>=0.8.0",
