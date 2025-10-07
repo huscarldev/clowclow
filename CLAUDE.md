@@ -102,6 +102,30 @@ pytest -v -k "asyncio"
 - Combines all system messages with newlines
 - Handles `UserPromptPart`, `TextPart`, `BinaryContent`, `ImageUrl`, and `ToolReturnPart` types
 - Detects multimodal content by checking for image types or list-based content
+- **Supports multi-turn conversations**: Automatically extracts and includes conversation history from previous turns
+
+### Multi-Turn Conversation Support
+- **Stateless design**: Each request is independent, making it compatible with distributed systems
+- **Automatic history extraction**: When Pydantic AI passes `message_history`, clowclow automatically extracts previous user-assistant exchanges
+- **Context preservation**: Previous conversation turns are formatted and prepended to the current prompt
+- **Works across all modes**: Multi-turn support works with text queries, structured output, and tool calling
+- **Example**:
+  ```python
+  from pydantic_ai import Agent
+  from clowclow import ClaudeCodeModel
+
+  agent = Agent(ClaudeCodeModel())
+
+  # First turn
+  result1 = await agent.run("What is the capital of France?")
+
+  # Second turn - Claude remembers the context
+  result2 = await agent.run(
+      "What is the population of that city?",
+      message_history=result1.new_messages()
+  )
+  # Claude understands "that city" refers to Paris from the first turn
+  ```
 
 ### Function Tool Calling (NEW)
 - Supports Pydantic AI function tools via MCP (Model Context Protocol) integration

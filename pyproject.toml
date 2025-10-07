@@ -1,6 +1,6 @@
 [project]
 name = "clowclow"
-version = "0.1.2"
+version = "0.2.0"
 description = "Make Claude Code available to Pydantic AI"
 readme = "README.md"
 homepage = "https://github.com/huscarldev/clowclow"

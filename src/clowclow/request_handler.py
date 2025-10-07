@@ -11,15 +11,24 @@ class RequestHandler:
     """Handles extraction and processing of Pydantic AI request messages."""
 
     @staticmethod
-    def extract_user_message(messages: list[_messages.ModelMessage]) -> str:
-        """Extract the most recent user message (text only).
+    def extract_user_message(messages: list[_messages.ModelMessage], include_history: bool = True) -> str:
+        """Extract the most recent user message (text only), optionally with conversation history.
 
         Args:
             messages: List of model messages
+            include_history: If True, prepend conversation history from previous turns
 
         Returns:
-            Extracted user message text
+            Extracted user message text, optionally with conversation history prepended
         """
+        # Get conversation history if requested
+        history = ""
+        if include_history and RequestHandler.has_conversation_history(messages):
+            history = RequestHandler.extract_conversation_history(messages)
+            if history:
+                history = f"{history}\n\n"
+
+        # Extract most recent user message
         for msg in reversed(messages):
             if isinstance(msg, _messages.ModelRequest):
                 # Extract text from the parts
@@ -29,21 +38,32 @@ class RequestHandler:
                         user_parts.append(part.content)
                     elif isinstance(part, _messages.TextPart):
                         user_parts.append(part.content)
-                return "\n".join(user_parts)
-        return ""
+                return f"{history}{'\n'.join(user_parts)}"
+        return history  # Return history even if no current user message
 
     @staticmethod
-    def extract_multimodal_content(messages: list[_messages.ModelMessage]) -> list[dict]:
-        """Extract multimodal content including text and images.
+    def extract_multimodal_content(messages: list[_messages.ModelMessage], include_history: bool = True) -> list[dict]:
+        """Extract multimodal content including text and images, optionally with conversation history.
 
         Args:
             messages: List of model messages
+            include_history: If True, prepend conversation history from previous turns
 
         Returns:
-            List of content blocks (text and image dicts)
+            List of content blocks (text and image dicts), with history prepended if requested
         """
         content_blocks = []
 
+        # Add conversation history as first text block if requested
+        if include_history and RequestHandler.has_conversation_history(messages):
+            history = RequestHandler.extract_conversation_history(messages)
+            if history:
+                content_blocks.append({
+                    "type": "text",
+                    "text": history
+                })
+
+        # Extract most recent user message
         for msg in reversed(messages):
             if isinstance(msg, _messages.ModelRequest):
                 for part in msg.parts:
@@ -98,8 +118,7 @@ class RequestHandler:
                         })
 
                 # Return after processing the most recent user message
-                if content_blocks:
-                    return content_blocks
+                return content_blocks
 
         return content_blocks
 
@@ -163,8 +182,15 @@ class RequestHandler:
         system_parts = []
         for msg in messages:
             if isinstance(msg, _messages.ModelRequest):
+                # Check instructions attribute
                 if msg.instructions:
                     system_parts.append(msg.instructions)
+
+                # Also check for SystemPromptPart in parts
+                for part in msg.parts:
+                    if isinstance(part, _messages.SystemPromptPart):
+                        system_parts.append(part.content)
+
         return "\n".join(system_parts)
 
     @staticmethod
@@ -213,3 +239,83 @@ class RequestHandler:
             updated_content = user_content.copy()
             updated_content.append({"type": "text", "text": tool_results_text})
             return updated_content
+
+    @staticmethod
+    def extract_conversation_history(messages: list[_messages.ModelMessage]) -> str:
+        """Extract previous conversation turns for multi-turn conversations.
+
+        This extracts ALL previous user-assistant exchanges from the message history
+        to provide context for multi-turn conversations. Returns empty string if no
+        previous exchanges exist.
+
+        Args:
+            messages: Full message history including previous turns
+
+        Returns:
+            Formatted conversation history as string
+        """
+        conversation_parts = []
+
+        for msg in messages:
+            if isinstance(msg, _messages.ModelRequest):
+                # Extract user messages from this turn
+                user_parts = []
+                for part in msg.parts:
+                    if isinstance(part, _messages.UserPromptPart):
+                        if isinstance(part.content, str):
+                            user_parts.append(part.content)
+                        elif isinstance(part.content, list):
+                            # Extract text from multimodal content
+                            for item in part.content:
+                                if isinstance(item, str):
+                                    user_parts.append(item)
+                                elif isinstance(item, dict) and item.get('type') == 'text':
+                                    user_parts.append(item.get('text', ''))
+                    elif isinstance(part, _messages.TextPart):
+                        user_parts.append(part.content)
+
+                if user_parts:
+                    conversation_parts.append(("user", "\n".join(user_parts)))
+
+            elif isinstance(msg, _messages.ModelResponse):
+                # Extract assistant responses from this turn
+                response_parts = []
+                for part in msg.parts:
+                    if isinstance(part, _messages.TextPart):
+                        response_parts.append(part.content)
+
+                if response_parts:
+                    conversation_parts.append(("assistant", "\n".join(response_parts)))
+
+        # Don't include the very last user message - that will be sent as the current prompt
+        # Remove the last entry if it's a user message
+        if conversation_parts and conversation_parts[-1][0] == "user":
+            conversation_parts = conversation_parts[:-1]
+
+        # Format as conversation history
+        if not conversation_parts:
+            return ""
+
+        formatted_history = []
+        for role, content in conversation_parts:
+            if role == "user":
+                formatted_history.append(f"User: {content}")
+            else:
+                formatted_history.append(f"Assistant: {content}")
+
+        return "\n\n".join(formatted_history)
+
+    @staticmethod
+    def has_conversation_history(messages: list[_messages.ModelMessage]) -> bool:
+        """Check if messages contain previous conversation turns.
+
+        Args:
+            messages: Message history
+
+        Returns:
+            True if there are previous exchanges (ModelResponse messages)
+        """
+        for msg in messages:
+            if isinstance(msg, _messages.ModelResponse):
+                return True
+        return False
